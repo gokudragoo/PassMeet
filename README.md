@@ -145,16 +145,9 @@ src/
 - Ticket ownership is **private** by default
 - Entry verification is **anonymous** - only validity is proven
 - No central database - all state lives on Aleo
-
-## Verify on Explorer
-
-- [passmeet_v1_7788.aleo](https://explorer.provable.com/testnet/program/passmeet_v1_7788.aleo)
-- [passmeet_subs_7788.aleo](https://explorer.provable.com/testnet/program/passmeet_subs_7788.aleo)
-
----
-
+ 
 <div align="center">
 
-**Built for Aleo Wavehack 2026**
+**Built for Aleo Wavehack**
 
 </div>
