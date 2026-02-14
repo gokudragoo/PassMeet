@@ -718,27 +718,40 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         );
       }
 
-      // Pass record - must be string in Aleo plaintext format for Leo wallet
+      // Pass record - Leo wallet expects Aleo record format (plaintext string or ciphertext)
       let recordInput: string;
       if (typeof recordToUse === "string") {
         recordInput = recordToUse;
       } else {
         const r = recordToUse as Record<string, unknown>;
-        const str = r?.toString?.() ?? r?.string ?? r?.record;
-        if (typeof str === "string") {
+        // Prefer fields that may contain the exact format the wallet expects
+        const str =
+          (typeof r?.plaintext === "string" ? r.plaintext : null) ??
+          (typeof r?.record === "string" ? r.record : null) ??
+          (typeof r?.string === "string" ? r.string : null) ??
+          (typeof (r as { toString?: () => string }).toString === "function"
+            ? (r as { toString: () => string }).toString()
+            : null);
+        if (typeof str === "string" && str.length > 10) {
           recordInput = str;
+        } else if (typeof r?.ciphertext === "string" && r.ciphertext.startsWith("record1")) {
+          // Wallet may accept ciphertext - it decrypts internally for spending
+          recordInput = r.ciphertext as string;
         } else {
-          // Build Aleo record format from object (wallet may return plain object via postMessage)
+          // Build Aleo plaintext format: owner.private, event_id, ticket_id, _nonce, version
           const data = (r?.data ?? r?.plaintext ?? r) as Record<string, unknown>;
           const getVal = (k: string) => {
             const v = data?.[k] ?? (r as Record<string, unknown>)?.[k];
             return (v as { value?: unknown })?.value ?? v;
           };
-          const owner = getVal("owner");
-          const eventId = getVal("event_id");
-          const ticketId = getVal("ticket_id");
-          const nonce = getVal("_nonce");
-          const version = getVal("version") ?? "1u8.public";
+          let owner = getVal("owner");
+          const eventId = getVal("event_id") ?? data?.event_id;
+          const ticketId = getVal("ticket_id") ?? data?.ticket_id;
+          const nonce = getVal("_nonce") ?? (r as Record<string, unknown>)?._nonce;
+          const version = getVal("version") ?? getVal("_version") ?? "1u8.public";
+          if (typeof owner === "string" && !owner.endsWith(".private") && !owner.endsWith(".public")) {
+            owner = `${owner}.private`;
+          }
           const fmt = (v: unknown) =>
             typeof v === "string" ? v : v != null ? String(v) : "";
           recordInput = `{\nowner: ${fmt(owner)},\nevent_id: ${fmt(eventId)},\nticket_id: ${fmt(ticketId)},\n_nonce: ${fmt(nonce)},\nversion: ${fmt(version)}\n}`;
