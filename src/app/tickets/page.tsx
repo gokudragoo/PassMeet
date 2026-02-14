@@ -100,8 +100,6 @@ export default function TicketsPage() {
             action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
           })
         });
-          description: "ZK proof accepted - your wallet address was never revealed"
-        });
       }
     } catch (error) {
       console.log("[PassMeet Tickets] verifyEntry: error", error);
