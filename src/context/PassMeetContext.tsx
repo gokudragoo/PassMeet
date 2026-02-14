@@ -643,18 +643,14 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
       const targetEventId = ticket.eventId;
       const targetTicketId = ticket.ticketId;
-      let recordToUse: string | null = null;
+      let recordToUse: unknown = null;
 
-      // Use cached recordString when available and valid (bypasses requestRecords)
-      if (ticket.recordString) {
-        const parsed = parseRecordIds(ticket.recordString);
-        if (parsed && parsed.eventId === targetEventId && parsed.ticketId === targetTicketId) {
-          recordToUse = ticket.recordString;
-          LOG("verifyEntry: using cached recordString", { eventId: targetEventId, ticketId: targetTicketId });
-        }
+      // Always fetch fresh records from wallet - cached recordString can have wrong format for executeTransaction
+      // (wallet expects native Aleo record format, not JSON; localStorage can corrupt the format)
+      if (!requestRecords) {
+        throw new Error("Wallet does not support record requests. Please use Leo or Puzzle wallet.");
       }
-
-      if (!recordToUse && requestRecords) {
+      {
         let records: unknown[] | null = null;
         const maxAttempts = 3;
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
@@ -688,7 +684,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         for (const recordItem of records) {
           const parsed = parseRecordIds(recordItem);
           if (parsed && parsed.eventId === targetEventId && parsed.ticketId === targetTicketId) {
-            recordToUse = typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem);
+            // Pass record as-is - wallet may accept object or string; avoid JSON.stringify (wrong format)
+            recordToUse = typeof recordItem === "string" ? recordItem : recordItem;
             break;
           }
         }
@@ -700,16 +697,18 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         }
       }
 
-      if (!recordToUse) {
+      if (recordToUse == null) {
         throw new Error(
           "No ticket record available. Please refresh your tickets and ensure your wallet has synced."
         );
       }
 
+      // Pass record as-is: wallet may expect string (Aleo plaintext format) or serializable object
+      const recordInput = recordToUse;
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "verify_entry",
-        inputs: [recordToUse],
+        inputs: [recordInput],
         fee: 100_000,
       });
 
