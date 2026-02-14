@@ -426,10 +426,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         };
 
         setEvents((prev) => [...prev, newEvent]);
-        LOG("createEvent: success", { eventId: idStr, txHash: txHash ?? tempId });
-        return txHash ?? tempId;
+        // Return only on-chain hash (at1...) for explorer - never temp UUID
+        LOG("createEvent: success", { eventId: idStr, onChainTxHash: txHash ?? "pending" });
+        return txHash;
       }
-      LOG("createEvent: no txId returned");
+      LOG("createEvent: no tempId from wallet");
       return null;
     } catch (error) {
       LOG("createEvent: error", error);
@@ -479,8 +480,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         LOG("buyTicket: tx confirmed", { tempId, txHash });
         await refreshEvents();
         await refreshTickets();
-        LOG("buyTicket: success", { txHash: txHash ?? tempId });
-        return txHash ?? tempId;
+        LOG("buyTicket: success", { onChainTxHash: txHash ?? "pending" });
+        return txHash;
       }
       LOG("buyTicket: no txId returned");
       return null;
@@ -552,8 +553,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             t.id === ticket.id ? { ...t, status: "Used" as const } : t
           )
         );
-        LOG("verifyEntry: success", { txHash: txHash ?? tempId });
-        return txHash ?? tempId;
+        LOG("verifyEntry: success", { onChainTxHash: txHash ?? "pending" });
+        return txHash;
       }
       LOG("verifyEntry: no txId returned");
       return null;

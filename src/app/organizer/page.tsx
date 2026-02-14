@@ -50,12 +50,12 @@ export default function OrganizerPage() {
 
       if (txHash) {
         console.log("[PassMeet Organizer] createEvent: success", { txHash });
+        const explorerUrl = getTransactionUrl(txHash);
         toast.success(`Event created successfully!`, {
-          description: `Transaction: ${txHash.slice(0, 16)}...`,
-          action: {
-            label: "View",
-            onClick: () => window.open(getTransactionUrl(txHash), "_blank")
-          }
+          description: explorerUrl ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.",
+          ...(explorerUrl && {
+            action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
+          })
         });
         setEventName("");
         setCapacity("");
