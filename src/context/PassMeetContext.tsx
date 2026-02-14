@@ -324,15 +324,30 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           return m ? m[1] : s.replace(/u64|\.private/g, "").trim() || null;
         }
 
-        for (const recordItem of records) {
+        function parseRecordForIds(recordItem: unknown): { eventId: string; ticketId: string } | null {
           try {
             const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
             const data = record?.data ?? record?.plaintext ?? record ?? recordItem;
             const rawEventId = data?.event_id?.value ?? data?.event_id ?? data?.eventId;
             const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id ?? data?.ticketId;
-            const eventIdRaw = extractU64(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
-            const ticketIdRaw = extractU64(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
-            if (!eventIdRaw || !ticketIdRaw) continue;
+            let eventIdRaw = extractU64(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
+            let ticketIdRaw = extractU64(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
+            if (eventIdRaw && ticketIdRaw) return { eventId: eventIdRaw, ticketId: ticketIdRaw };
+            const str = typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem);
+            const eventMatch = str.match(/event_id["\s:]+(\d+)u64/);
+            const ticketMatch = str.match(/ticket_id["\s:]+(\d+)u64/);
+            if (eventMatch && ticketMatch) return { eventId: eventMatch[1], ticketId: ticketMatch[1] };
+            return null;
+          } catch {
+            return null;
+          }
+        }
+
+        for (const recordItem of records) {
+          try {
+            const parsed = parseRecordForIds(recordItem);
+            if (!parsed) continue;
+            const { eventId: eventIdRaw, ticketId: ticketIdRaw } = parsed;
 
             const event = eventMap[eventIdRaw];
 
@@ -614,12 +629,13 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     }
   }, [address, refreshEvents, refreshTickets]);
 
-  return (
+    return (
     <PassMeetContext.Provider
       value={{
         events,
         myTickets,
-        isLoading,
+        isLoading: isDataLoading,
+        isDataLoading,
         isAuthenticated,
         authenticateWithSignature,
         createEvent,
