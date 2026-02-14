@@ -99,10 +99,11 @@ PINATA_JWT=your_pinata_jwt_token
 NEXT_PUBLIC_GATEWAY_URL=https://gateway.pinata.cloud
 
 # Aleo Network Configuration
+# Use "testnet" or "mainnet". For mainnet, deploy contracts first and set program IDs.
 NEXT_PUBLIC_ALEO_NETWORK=testnet
 NEXT_PUBLIC_ALEO_RPC_URL=https://api.explorer.provable.com/v2
 
-# Deployed Contract Addresses
+# Deployed Contract Addresses (testnet by default)
 NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID=passmeet_v1_7788.aleo
 NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID=passmeet_subs_7788.aleo
 ```
