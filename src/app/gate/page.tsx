@@ -85,13 +85,21 @@ export default function GatePage() {
       console.error(error);
       setStatus("error");
       const errorMessage = error instanceof Error ? error.message : "Invalid or Used Proof! Access Denied.";
+      setLastError(errorMessage);
       toast.error(errorMessage);
     }
   };
 
   const reset = () => {
+    setLastError(null);
     setStatus("idle");
     setVerificationData(null);
+  };
+
+  const handleTryAgainWithRefresh = async () => {
+    toast.info("Refreshing tickets...");
+    await refreshTickets({ silent: true });
+    reset();
   };
 
   return (
@@ -228,7 +236,7 @@ export default function GatePage() {
                     <CheckCircle2 className="h-12 w-12" />
                   </div>
                   <CardTitle className="text-3xl font-bold text-primary">ACCESS GRANTED</CardTitle>
-                  <CardDescription className="text-white/60">Verified On-Chain via Aleo Testnet</CardDescription>
+                  <CardDescription className="text-white/60">Verified On-Chain via {NETWORK_LABEL}</CardDescription>
                 </CardHeader>
                 <CardContent className="px-8 pb-8 pt-4">
                   <div className="space-y-4 rounded-xl bg-black/40 p-6 border border-white/10">
@@ -290,16 +298,26 @@ export default function GatePage() {
                   <div className="space-y-4 rounded-xl bg-black/40 p-8 border border-white/10 text-center">
                     <ShieldAlert className="h-12 w-12 text-destructive mx-auto mb-2 opacity-50" />
                     <p className="text-white font-medium">
-                      This ticket proof is either invalid, expired, or has already been used for entry.
+                      {lastError ||
+                        "This ticket proof is either invalid, expired, or has already been used for entry."}
                     </p>
                   </div>
-                  <Button 
-                    variant="outline"
-                    className="w-full mt-8 border-white/10 bg-white/5 hover:bg-white/10 text-white font-bold h-12 rounded-full"
-                    onClick={reset}
-                  >
-                    Try Again
-                  </Button>
+                  <div className="flex flex-col gap-3 mt-8">
+                    <Button
+                      variant="outline"
+                      className="w-full border-white/10 bg-white/5 hover:bg-white/10 text-white font-bold h-12 rounded-full"
+                      onClick={handleTryAgainWithRefresh}
+                    >
+                      Refresh Tickets & Try Again
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      className="w-full text-muted-foreground"
+                      onClick={reset}
+                    >
+                      Cancel
+                    </Button>
+                  </div>
                 </CardContent>
               </Card>
             </motion.div>
