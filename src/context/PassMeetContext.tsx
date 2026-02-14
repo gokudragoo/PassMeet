@@ -179,6 +179,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         return true;
       }
     } catch (error) {
+      LOG("authenticateWithSignature: error, using fallback", error);
       console.error("Authentication failed:", error);
       setIsAuthenticated(true);
       localStorage.setItem("passmeet_auth", JSON.stringify({
@@ -570,6 +571,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   // ---- Mount / wallet change ----
   useEffect(() => {
     if (address) {
+      LOG("wallet connected: refreshing data", { address: address.slice(0, 12) + "..." });
       const stored = localStorage.getItem("passmeet_auth");
       if (stored) {
         try {

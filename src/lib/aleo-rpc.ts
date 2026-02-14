@@ -79,9 +79,14 @@ async function fetchMappingValue(
  */
 export async function getEventCounter(): Promise<number> {
   const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "event_counter", "0u8");
-  if (!text) return 0;
+  if (!text) {
+    console.log("[PassMeet RPC] getEventCounter: no data, returning 0");
+    return 0;
+  }
   const match = text.match(/(\d+)u64/);
-  return match ? parseInt(match[1], 10) : 0;
+  const count = match ? parseInt(match[1], 10) : 0;
+  console.log("[PassMeet RPC] getEventCounter:", count);
+  return count;
 }
 
 /**
@@ -90,9 +95,14 @@ export async function getEventCounter(): Promise<number> {
 export async function getEvent(eventId: number): Promise<OnChainEventInfo | null> {
   const key = `${eventId}u64`;
   const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "events", key);
-  if (!text) return null;
+  if (!text) {
+    console.log("[PassMeet RPC] getEvent:", eventId, "-> null");
+    return null;
+  }
   try {
-    return parseEventInfo(text, eventId);
+    const parsed = parseEventInfo(text, eventId);
+    console.log("[PassMeet RPC] getEvent:", eventId, "->", parsed ? "ok" : "null");
+    return parsed;
   } catch {
     return null;
   }
