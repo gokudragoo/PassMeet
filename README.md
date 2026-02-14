@@ -39,6 +39,10 @@ PassMeet is a fully on-chain, privacy-preserving event ticketing and access cont
 | **Subscription Tiers** | On-chain subscription model for premium organizer features |
 | **IPFS Storage** | Event metadata stored on Pinata IPFS for decentralized data availability |
 
+
+## Update in wave 2 
+
+
 ## Tech Stack
 
 | Category | Technology |
