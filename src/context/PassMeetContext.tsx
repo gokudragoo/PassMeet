@@ -77,30 +77,9 @@ interface EventMetadataCache {
   organizer?: string;
 }
 
-/** Fetch ALL event metadata from IPFS (single request). Returns a map keyed by event ID string. */
+/** Event metadata from localStorage only (no IPFS). Returns empty - metadata comes from getLocalMetadata. */
 async function fetchAllEventMetadata(): Promise<Record<string, EventMetadataCache>> {
-  try {
-    const res = await fetch("/api/events");
-    if (!res.ok) return {};
-    const { events: ipfsEvents } = await res.json();
-    if (!Array.isArray(ipfsEvents)) return {};
-
-    const map: Record<string, EventMetadataCache> = {};
-    for (const e of ipfsEvents) {
-      if (e?.id != null) {
-        map[String(e.id)] = {
-          name: e.name || "",
-          date: e.date || "",
-          location: e.location || "",
-          image: e.image || undefined,
-          organizer: e.organizer || undefined,
-        };
-      }
-    }
-    return map;
-  } catch {
-    return {};
-  }
+  return {};
 }
 
 /** Read localStorage-cached metadata map */
@@ -221,46 +200,30 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const results = await Promise.all(ids.map((id) => getEvent(id).then((data) => ({ id, data }))));
       const onChainEvents = results.filter((r): r is { id: number; data: NonNullable<typeof r.data> } => r.data != null);
 
-      // 3) Fetch metadata from IPFS (single batch call) + localStorage
-      const ipfsMeta = await fetchAllEventMetadata();
+      // 3) Metadata from localStorage only
       const localMeta = getLocalMetadata();
 
-      // 4) Merge on-chain data with metadata
-      // Only show events that have metadata (IPFS or localStorage) to avoid orphan/test data
-      const merged = onChainEvents
-        .map(({ id, data }): Event | null => {
-          const idStr = String(id);
-          const ipfs = ipfsMeta[idStr];
-          const local = localMeta[idStr];
-
-          // Skip events with no metadata (avoids showing placeholder "Event #1" from orphan on-chain data)
-          if (!ipfs && !local) return null;
-
-          // Priority: IPFS > localStorage > defaults
-          const name = ipfs?.name || local?.name || `Event #${id}`;
-          const date = ipfs?.date || local?.date || "";
-          const location = ipfs?.location || local?.location || "";
-          const image = ipfs?.image || DEFAULT_IMAGE;
-
-          const organizerShort = data.organizer
-            ? `${data.organizer.slice(0, 10)}...${data.organizer.slice(-4)}`
-            : "Unknown";
-
-          return {
-            id: idStr,
-            name,
-            organizer: ipfs?.organizer || organizerShort,
-            organizerAddress: data.organizer,
-            capacity: data.capacity,
-            ticketCount: data.ticket_count,
-            price: data.price / 1_000_000,
-            date,
-            location,
-            image,
-            status: "Active" as const,
-          };
-        })
-        .filter((e): e is Event => e != null);
+      // 4) Merge on-chain data with metadata - show all on-chain events
+      const merged = onChainEvents.map(({ id, data }): Event => {
+        const idStr = String(id);
+        const local = localMeta[idStr];
+        const organizerShort = data.organizer
+          ? `${data.organizer.slice(0, 10)}...${data.organizer.slice(-4)}`
+          : "Unknown";
+        return {
+          id: idStr,
+          name: local?.name || `Event #${id}`,
+          organizer: local?.organizer || organizerShort,
+          organizerAddress: data.organizer,
+          capacity: data.capacity,
+          ticketCount: data.ticket_count,
+          price: data.price / 1_000_000,
+          date: local?.date || "",
+          location: local?.location || "",
+          image: local?.image || DEFAULT_IMAGE,
+          status: "Active" as const,
+        };
+      });
 
       LOG("refreshEvents: done", { count: merged.length, eventIds: merged.map((e) => e.id) });
       setEvents(merged);
@@ -441,24 +404,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const idStr = String(newOnChainId);
 
         saveLocalMetadata(idStr, { name, date: eventDate, location: eventLocation });
-
-        try {
-          await fetch("/api/events", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: newOnChainId,
-              name,
-              date: eventDate,
-              location: eventLocation,
-              organizer: address,
-              capacity,
-              price
-            })
-          });
-        } catch {
-          // IPFS optional
-        }
 
         const newEvent: Event = {
           id: idStr,
