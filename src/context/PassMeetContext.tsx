@@ -715,12 +715,17 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         } else {
           // Build Aleo record format from object (wallet may return plain object via postMessage)
           const data = (r?.data ?? r?.plaintext ?? r) as Record<string, unknown>;
-          const owner = data?.owner ?? r?.owner ?? "";
-          const eventId = data?.event_id ?? r?.event_id ?? "";
-          const ticketId = data?.ticket_id ?? r?.ticket_id ?? "";
-          const nonce = data?._nonce ?? r?._nonce ?? "";
-          const version = data?.version ?? r?.version ?? "1u8.public";
-          const fmt = (v: unknown) => (typeof v === "string" ? v : v != null ? String(v) : "");
+          const getVal = (k: string) => {
+            const v = data?.[k] ?? (r as Record<string, unknown>)?.[k];
+            return (v as { value?: unknown })?.value ?? v;
+          };
+          const owner = getVal("owner");
+          const eventId = getVal("event_id");
+          const ticketId = getVal("ticket_id");
+          const nonce = getVal("_nonce");
+          const version = getVal("version") ?? "1u8.public";
+          const fmt = (v: unknown) =>
+            typeof v === "string" ? v : v != null ? String(v) : "";
           recordInput = `{\nowner: ${fmt(owner)},\nevent_id: ${fmt(eventId)},\nticket_id: ${fmt(ticketId)},\n_nonce: ${fmt(nonce)},\nversion: ${fmt(version)}\n}`;
         }
       }
