@@ -240,10 +240,10 @@ export default function GatePage() {
                     <div className="flex justify-between items-center border-b border-white/5 pb-3">
                       <span className="text-zinc-500 text-sm uppercase font-bold tracking-wider">Transaction</span>
                       <a
-                        href={verificationData?.txHash ? getTransactionUrl(verificationData.txHash) : "#"}
+                        href={verificationData?.txHash ? (getTransactionUrl(verificationData.txHash) ?? "#") : "#"}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className="text-primary font-mono text-xs hover:underline flex items-center gap-1"
+                        className={`font-mono text-xs flex items-center gap-1 ${getTransactionUrl(verificationData.txHash) ? "text-primary hover:underline" : "text-muted-foreground cursor-default"}`}
                       >
                         {verificationData?.txHash?.slice(0, 16)}...
                         <ExternalLink className="h-3 w-3" />

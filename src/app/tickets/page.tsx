@@ -58,12 +58,12 @@ export default function TicketsPage() {
 
       if (txId) {
         console.log("[PassMeet Tickets] buyTicket: success", { txId });
+        const explorerUrl = getTransactionUrl(txId);
         toast.success("Ticket minted successfully!", {
-          description: `Transaction: ${txId.slice(0, 16)}...`,
-          action: {
-            label: "View",
-            onClick: () => window.open(getTransactionUrl(txId), "_blank")
-          }
+          description: explorerUrl ? `Transaction: ${txId.slice(0, 16)}...` : "Transaction confirmed on-chain.",
+          ...(explorerUrl && {
+            action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
+          })
         });
         setActiveTab("tickets");
       }
