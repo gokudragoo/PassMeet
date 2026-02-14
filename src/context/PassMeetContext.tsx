@@ -282,6 +282,9 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     try {
       const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
       LOG("refreshTickets: records fetched", { count: records?.length ?? 0 });
+      if (records?.length > 0) {
+        LOG("refreshTickets: raw record sample", JSON.stringify(records[0]).slice(0, 500));
+      }
       const tickets: Ticket[] = [];
 
       if (records && records.length > 0) {
@@ -319,6 +322,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
         function extractU64(val: unknown): string | null {
           if (val == null) return null;
+          if (typeof val === "bigint") return String(val);
           const s = String(val);
           const m = s.match(/(\d+)u64/);
           return m ? m[1] : s.replace(/u64|\.private/g, "").trim() || null;
@@ -328,8 +332,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           try {
             const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
             const data = record?.data ?? record?.plaintext ?? record ?? recordItem;
-            const rawEventId = data?.event_id?.value ?? data?.event_id ?? data?.eventId;
-            const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id ?? data?.ticketId;
+            const rawEventId = data?.event_id?.value ?? data?.event_id ?? data?.eventId ?? record?.event_id ?? record?.eventId;
+            const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id ?? data?.ticketId ?? record?.ticket_id ?? record?.ticketId;
             let eventIdRaw = extractU64(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
             let ticketIdRaw = extractU64(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
             if (eventIdRaw && ticketIdRaw) return { eventId: eventIdRaw, ticketId: ticketIdRaw };
@@ -369,8 +373,15 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         }
       }
 
-      LOG("refreshTickets: done", { count: tickets.length });
-      setMyTickets(tickets);
+      setMyTickets((prev) => {
+        const walletKeys = new Set(tickets.map((t) => `${t.eventId}_${t.ticketId}`));
+        const optimisticOnly = prev.filter(
+          (t) => !t.recordString && !walletKeys.has(`${t.eventId}_${t.ticketId}`)
+        );
+        const merged = [...tickets, ...optimisticOnly];
+        LOG("refreshTickets: done", { fromWallet: tickets.length, optimistic: optimisticOnly.length, total: merged.length });
+        return merged;
+      });
       return tickets.length;
     } catch (error) {
       LOG("refreshTickets: error", error);
@@ -501,8 +512,26 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
         LOG("buyTicket: tx confirmed", { tempId, txHash });
+
+        const optimisticTicket: Ticket = {
+          id: `ticket_${eventIdNum}_${nextTicketId}`,
+          eventId: String(eventIdNum),
+          ticketId: String(nextTicketId),
+          eventName: event.name,
+          date: event.date,
+          location: event.location,
+          status: "Valid",
+          txHash: txHash ?? "",
+          nullifier: "",
+          recordString: undefined,
+        };
+        setMyTickets((prev) => {
+          const exists = prev.some((t) => t.eventId === optimisticTicket.eventId && t.ticketId === optimisticTicket.ticketId);
+          return exists ? prev : [...prev, optimisticTicket];
+        });
+        LOG("buyTicket: optimistic ticket added", { eventId: eventIdNum, ticketId: nextTicketId });
+
         await refreshEvents({ silent: true });
-        // Wallet may need time to sync the new record - retry refreshTickets with longer delays
         for (let attempt = 0; attempt < 6; attempt++) {
           const count = await refreshTickets({ silent: true });
           LOG("buyTicket: refreshTickets attempt", { attempt, count });
@@ -525,13 +554,23 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const verifyEntry = useCallback(async (ticket: Ticket): Promise<string | null> => {
     if (!address || !executeTransaction || !requestRecords) return null;
 
-    LOG("verifyEntry: starting", { ticketId: ticket.id, eventId: ticket.eventId });
+    LOG("verifyEntry: starting", { ticketId: ticket.id, eventId: ticket.eventId, hasRecordString: !!ticket.recordString });
     try {
-      const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+      let records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
       LOG("verifyEntry: records fetched", { count: records?.length ?? 0 });
 
+      if ((!records || records.length === 0) && !ticket.recordString) {
+        await new Promise((r) => setTimeout(r, 3000));
+        records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+        LOG("verifyEntry: retry records fetched", { count: records?.length ?? 0 });
+      }
+
       if (!records || records.length === 0) {
-        throw new Error("No ticket records found in wallet. Please ensure you have minted a ticket.");
+        throw new Error(
+          ticket.recordString
+            ? "No ticket records found in wallet. Please ensure you have minted a ticket."
+            : "Wallet has not synced your ticket yet. Please wait a minute and try again."
+        );
       }
 
       let recordToUse: string | null = null;
@@ -540,6 +579,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
       function extractU64Verify(val: unknown): string | null {
         if (val == null) return null;
+        if (typeof val === "bigint") return String(val);
         const s = String(val);
         const m = s.match(/(\d+)u64/);
         return m ? m[1] : s.replace(/u64|\.private/g, "").trim() || null;
@@ -549,8 +589,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         try {
           const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
           const data = record?.data ?? record?.plaintext ?? record;
-          const rawEventId = data?.event_id?.value ?? data?.event_id;
-          const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id;
+          const rawEventId = data?.event_id?.value ?? data?.event_id ?? record?.event_id ?? record?.eventId;
+          const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id ?? record?.ticket_id ?? record?.ticketId;
           const recordEventId = extractU64Verify(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
           const recordTicketId = extractU64Verify(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
           if (!recordEventId || !recordTicketId) continue;
@@ -565,7 +605,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
 
       if (!recordToUse) {
-        throw new Error("Could not find matching ticket record for this event in your wallet.");
+        throw new Error(
+          ticket.recordString
+            ? "Could not find matching ticket record for this event in your wallet."
+            : "Wallet has not synced your ticket yet. Please wait a minute and try again."
+        );
       }
 
       const result = await executeTransaction({

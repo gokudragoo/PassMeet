@@ -69,6 +69,7 @@ export default function TicketsPage() {
         });
         setActiveTab("tickets");
         setTimeout(() => refreshTickets({ silent: true }), 8000);
+        setTimeout(() => refreshTickets({ silent: true }), 30000);
       }
     } catch (error) {
       console.log("[PassMeet Tickets] buyTicket: error", error);
