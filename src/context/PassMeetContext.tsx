@@ -313,8 +313,17 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
           if (records && records.length > 0) break;
         } catch (e) {
-          LOG("refreshTickets: requestRecords failed", { attempt: attempt + 1, message: (e as Error)?.message });
-          if (attempt === 2) throw e;
+          const msg = (e as Error)?.message ?? "";
+          LOG("refreshTickets: requestRecords failed", { attempt: attempt + 1, message: msg });
+          if (attempt === 2) {
+            const lower = msg.toLowerCase();
+            if (lower.includes("not_granted") || lower.includes("not granted")) {
+              throw new Error(
+                "Record access was denied. Please disconnect your wallet and reconnect - when reconnecting, approve the permission to access records for this app."
+              );
+            }
+            throw e;
+          }
         }
       }
       records = records ?? [];
@@ -666,8 +675,14 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             const msg = (reqErr as Error)?.message ?? "";
             LOG("verifyEntry: requestRecords failed", { attempt: attempt + 1, message: msg });
             if (attempt === maxAttempts - 1) {
+              const lower = msg.toLowerCase();
+              if (lower.includes("not_granted") || lower.includes("not granted")) {
+                throw new Error(
+                  "Record access was denied. Please disconnect your wallet and reconnect - when reconnecting, approve the permission to access records for this app."
+                );
+              }
               throw new Error(
-                msg.toLowerCase().includes("request") && msg.toLowerCase().includes("record")
+                lower.includes("request") && lower.includes("record")
                   ? "Wallet could not provide records. Try: 1) Disconnect and reconnect your wallet, 2) Ensure Leo/Puzzle wallet is on Testnet, 3) Refresh tickets and try again."
                   : msg || "Failed to request records from wallet."
               );
