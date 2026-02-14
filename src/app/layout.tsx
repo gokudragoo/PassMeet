@@ -4,7 +4,6 @@ import "./globals.css";
 import { AleoWalletProvider } from "@/components/AleoWalletProvider";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
-import { NetworkBanner } from "@/components/NetworkBanner";
 import { Toaster } from "@/components/ui/sonner";
 
 const geistSans = Geist({
@@ -54,7 +53,6 @@ export default function RootLayout({
     <html lang="en" className="dark">
       <body className={`${geistSans.variable} ${geistMono.variable} antialiased min-h-screen flex flex-col bg-background text-foreground`}>
         <AleoWalletProvider>
-          <NetworkBanner />
           <Navbar />
           <main className="grow">
             {children}
