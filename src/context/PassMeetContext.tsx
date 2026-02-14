@@ -6,7 +6,7 @@ import {
   Transaction,
   WalletAdapterNetwork
 } from "@demox-labs/aleo-wallet-adapter-base";
-import { PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
+import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
 import { getEventCounter, getEvent } from "@/lib/aleo-rpc";
 
 export interface Event {
@@ -65,6 +65,65 @@ interface PassMeetProviderProps {
 
 const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800";
 
+// ---------------------
+// Metadata helpers
+// ---------------------
+
+interface EventMetadataCache {
+  name: string;
+  date: string;
+  location: string;
+  image?: string;
+  organizer?: string;
+}
+
+/** Fetch ALL event metadata from IPFS (single request). Returns a map keyed by event ID string. */
+async function fetchAllEventMetadata(): Promise<Record<string, EventMetadataCache>> {
+  try {
+    const res = await fetch("/api/events");
+    if (!res.ok) return {};
+    const { events: ipfsEvents } = await res.json();
+    if (!Array.isArray(ipfsEvents)) return {};
+
+    const map: Record<string, EventMetadataCache> = {};
+    for (const e of ipfsEvents) {
+      if (e?.id != null) {
+        map[String(e.id)] = {
+          name: e.name || "",
+          date: e.date || "",
+          location: e.location || "",
+          image: e.image || undefined,
+          organizer: e.organizer || undefined,
+        };
+      }
+    }
+    return map;
+  } catch {
+    return {};
+  }
+}
+
+/** Read localStorage-cached metadata map */
+function getLocalMetadata(): Record<string, { name: string; date: string; location: string }> {
+  try {
+    const stored = localStorage.getItem("passmeet_event_metadata");
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Save metadata to localStorage cache */
+function saveLocalMetadata(id: string, meta: { name: string; date: string; location: string }) {
+  const map = getLocalMetadata();
+  map[id] = meta;
+  localStorage.setItem("passmeet_event_metadata", JSON.stringify(map));
+}
+
+// ---------------------
+// Provider
+// ---------------------
+
 export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const { publicKey, signMessage, requestTransaction, requestRecords } = useWallet();
   const [events, setEvents] = useState<Event[]>([]);
@@ -72,6 +131,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
+  // ---- Authentication ----
   const authenticateWithSignature = useCallback(async (): Promise<boolean> => {
     if (!publicKey) return false;
 
@@ -80,7 +140,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const message = `PassMeet Authentication\nTimestamp: ${Date.now()}\nAddress: ${publicKey}`;
         const encoder = new TextEncoder();
         const messageBytes = encoder.encode(message);
-
         const signature = await signMessage(messageBytes);
 
         if (signature) {
@@ -93,6 +152,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         }
         return false;
       } else {
+        // Wallet doesn't support signMessage — fall back to connect-only auth
         setIsAuthenticated(true);
         localStorage.setItem("passmeet_auth", JSON.stringify({
           address: publicKey,
@@ -103,6 +163,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
     } catch (error) {
       console.error("Authentication failed:", error);
+      // Graceful fallback so the user isn't stuck
       setIsAuthenticated(true);
       localStorage.setItem("passmeet_auth", JSON.stringify({
         address: publicKey,
@@ -113,47 +174,57 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     }
   }, [publicKey, signMessage]);
 
+  // ---- Refresh Events (on-chain + metadata) ----
   const refreshEvents = useCallback(async () => {
     setIsLoading(true);
     try {
+      // 1) Get the number of events on-chain
       const maxEventId = await getEventCounter();
-      const onChainEvents: Event[] = [];
-
-      for (let id = 1; id <= maxEventId; id++) {
-        const onChain = await getEvent(id);
-        if (!onChain) continue;
-
-        const metadata = await fetchEventMetadata(id);
-        const organizerShort = onChain.organizer
-          ? `${onChain.organizer.slice(0, 10)}...${onChain.organizer.slice(-4)}`
-          : "Unknown";
-
-        onChainEvents.push({
-          id: String(id),
-          name: metadata?.name ?? `Event #${id}`,
-          organizer: metadata?.organizer ?? organizerShort,
-          organizerAddress: onChain.organizer,
-          capacity: onChain.capacity,
-          ticketCount: onChain.ticket_count,
-          price: onChain.price / 1_000_000,
-          date: metadata?.date ?? "",
-          location: metadata?.location ?? "",
-          image: metadata?.image ?? DEFAULT_IMAGE,
-          status: "Active"
-        });
+      if (maxEventId === 0) {
+        setEvents([]);
+        return;
       }
 
-      const storedMetadata = localStorage.getItem("passmeet_event_metadata");
-      const metadataMap: Record<string, { name: string; date: string; location: string }> = storedMetadata
-        ? JSON.parse(storedMetadata)
-        : {};
+      // 2) Fetch on-chain event data for all IDs
+      const onChainEvents: { id: number; data: NonNullable<Awaited<ReturnType<typeof getEvent>>> }[] = [];
+      for (let id = 1; id <= maxEventId; id++) {
+        const data = await getEvent(id);
+        if (data) onChainEvents.push({ id, data });
+      }
 
-      const merged = onChainEvents.map((e) => {
-        const meta = metadataMap[e.id];
-        if (meta) {
-          return { ...e, name: meta.name || e.name, date: meta.date || e.date, location: meta.location || e.location };
-        }
-        return e;
+      // 3) Fetch metadata from IPFS (single batch call) + localStorage
+      const ipfsMeta = await fetchAllEventMetadata();
+      const localMeta = getLocalMetadata();
+
+      // 4) Merge on-chain data with metadata
+      const merged: Event[] = onChainEvents.map(({ id, data }) => {
+        const idStr = String(id);
+        const ipfs = ipfsMeta[idStr];
+        const local = localMeta[idStr];
+
+        // Priority: IPFS > localStorage > defaults
+        const name = ipfs?.name || local?.name || `Event #${id}`;
+        const date = ipfs?.date || local?.date || "";
+        const location = ipfs?.location || local?.location || "";
+        const image = ipfs?.image || DEFAULT_IMAGE;
+
+        const organizerShort = data.organizer
+          ? `${data.organizer.slice(0, 10)}...${data.organizer.slice(-4)}`
+          : "Unknown";
+
+        return {
+          id: idStr,
+          name,
+          organizer: ipfs?.organizer || organizerShort,
+          organizerAddress: data.organizer,
+          capacity: data.capacity,
+          ticketCount: data.ticket_count,
+          price: data.price / 1_000_000,
+          date,
+          location,
+          image,
+          status: "Active" as const,
+        };
       });
 
       setEvents(merged);
@@ -165,18 +236,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     }
   }, []);
 
-  async function fetchEventMetadata(eventId: number): Promise<{ name: string; date: string; location: string; image?: string; organizer?: string } | null> {
-    try {
-      const res = await fetch("/api/events");
-      if (!res.ok) return null;
-      const { events: ipfsEvents } = await res.json();
-      const found = ipfsEvents?.find((e: { id: string | number }) => String(e.id) === String(eventId));
-      return found ? { name: found.name, date: found.date, location: found.location, image: found.image, organizer: found.organizer } : null;
-    } catch {
-      return null;
-    }
-  }
-
+  // ---- Refresh Tickets (from wallet records) ----
   const refreshTickets = useCallback(async () => {
     if (!publicKey || !requestRecords) return;
 
@@ -186,7 +246,33 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tickets: Ticket[] = [];
 
       if (records && records.length > 0) {
-        const currentEvents = await fetchEventsForTickets();
+        // Fetch current events for name/date/location lookup
+        const maxEventId = await getEventCounter();
+        const eventMap: Record<string, Event> = {};
+
+        const ipfsMeta = await fetchAllEventMetadata();
+        const localMeta = getLocalMetadata();
+
+        for (let id = 1; id <= maxEventId; id++) {
+          const data = await getEvent(id);
+          if (!data) continue;
+          const idStr = String(id);
+          const ipfs = ipfsMeta[idStr];
+          const local = localMeta[idStr];
+          eventMap[idStr] = {
+            id: idStr,
+            name: ipfs?.name || local?.name || `Event #${id}`,
+            organizer: "",
+            organizerAddress: data.organizer,
+            capacity: data.capacity,
+            ticketCount: data.ticket_count,
+            price: data.price / 1_000_000,
+            date: ipfs?.date || local?.date || "",
+            location: ipfs?.location || local?.location || "",
+            image: DEFAULT_IMAGE,
+            status: "Active",
+          };
+        }
 
         for (const recordStr of records) {
           try {
@@ -196,16 +282,14 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
             const eventIdRaw = String(data.event_id).replace("u64", "").replace(".private", "").trim();
             const ticketIdRaw = String(data.ticket_id).replace("u64", "").replace(".private", "").trim();
-            const eventId = eventIdRaw;
-            const ticketId = ticketIdRaw;
 
-            const event = currentEvents.find((e) => e.id === eventId);
+            const event = eventMap[eventIdRaw];
 
             tickets.push({
-              id: `ticket_${eventId}_${ticketId}`,
-              eventId,
-              ticketId,
-              eventName: event?.name ?? `Event #${eventId}`,
+              id: `ticket_${eventIdRaw}_${ticketIdRaw}`,
+              eventId: eventIdRaw,
+              ticketId: ticketIdRaw,
+              eventName: event?.name ?? `Event #${eventIdRaw}`,
               date: event?.date ?? "",
               location: event?.location ?? "",
               status: "Valid",
@@ -228,30 +312,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     }
   }, [publicKey, requestRecords]);
 
-  async function fetchEventsForTickets(): Promise<Event[]> {
-    const maxEventId = await getEventCounter();
-    const result: Event[] = [];
-    for (let id = 1; id <= maxEventId; id++) {
-      const onChain = await getEvent(id);
-      if (!onChain) continue;
-      const metadata = await fetchEventMetadata(id);
-      result.push({
-        id: String(id),
-        name: metadata?.name ?? `Event #${id}`,
-        organizer: "",
-        organizerAddress: onChain.organizer,
-        capacity: onChain.capacity,
-        ticketCount: onChain.ticket_count,
-        price: onChain.price / 1_000_000,
-        date: metadata?.date ?? "",
-        location: metadata?.location ?? "",
-        image: metadata?.image ?? DEFAULT_IMAGE,
-        status: "Active"
-      });
-    }
-    return result;
-  }
-
+  // ---- Create Event ----
   const createEvent = useCallback(async (
     name: string,
     capacity: number,
@@ -270,32 +331,28 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         PASSMEET_V1_PROGRAM_ID,
         "create_event",
         [`${capacity}u32`, `${Math.floor(price * 1_000_000)}u64`],
-        100000
+        100_000
       );
 
       const prevCount = await getEventCounter();
       const txHash = await requestTransaction(aleoTransaction);
 
       if (txHash) {
-        const newOnChainId = await pollForNewEventId(prevCount);
-        const newEvent: Event = {
-          id: String(newOnChainId),
-          name,
-          organizer: publicKey.slice(0, 10) + "..." + publicKey.slice(-4),
-          organizerAddress: publicKey,
-          capacity,
-          ticketCount: 0,
-          price,
-          date: eventDate,
-          location: eventLocation,
-          image: DEFAULT_IMAGE,
-          status: "Active"
-        };
+        // Try to discover the new on-chain event ID by polling
+        let newOnChainId: number;
+        try {
+          newOnChainId = await pollForNewEventId(prevCount);
+        } catch {
+          // If polling times out, use prevCount + 1 as best guess
+          newOnChainId = prevCount + 1;
+        }
 
-        const metadataMap = JSON.parse(localStorage.getItem("passmeet_event_metadata") || "{}");
-        metadataMap[newEvent.id] = { name, date: eventDate, location: eventLocation };
-        localStorage.setItem("passmeet_event_metadata", JSON.stringify(metadataMap));
+        const idStr = String(newOnChainId);
 
+        // Save metadata to localStorage immediately
+        saveLocalMetadata(idStr, { name, date: eventDate, location: eventLocation });
+
+        // Also try to save to IPFS (non-blocking, failure is OK)
         try {
           await fetch("/api/events", {
             method: "POST",
@@ -311,8 +368,22 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             })
           });
         } catch {
-          // IPFS optional - metadata in localStorage is fallback
+          // IPFS optional — localStorage is the fallback
         }
+
+        const newEvent: Event = {
+          id: idStr,
+          name,
+          organizer: publicKey.slice(0, 10) + "..." + publicKey.slice(-4),
+          organizerAddress: publicKey,
+          capacity,
+          ticketCount: 0,
+          price,
+          date: eventDate,
+          location: eventLocation,
+          image: DEFAULT_IMAGE,
+          status: "Active"
+        };
 
         setEvents((prev) => [...prev, newEvent]);
         return txHash;
@@ -326,15 +397,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     }
   }, [publicKey, requestTransaction]);
 
-  async function pollForNewEventId(prevCount: number, maxAttempts = 10): Promise<number> {
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 1500));
-      const count = await getEventCounter();
-      if (count > prevCount) return count;
-    }
-    throw new Error("Could not determine new event ID from chain");
-  }
-
+  // ---- Buy Ticket ----
   const buyTicket = useCallback(async (event: Event): Promise<string | null> => {
     if (!publicKey || !requestTransaction) return null;
 
@@ -343,12 +406,17 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
       const eventIdNum = parseInt(event.id, 10);
       if (isNaN(eventIdNum)) {
-        throw new Error("Invalid event ID");
+        throw new Error(`Invalid event ID: "${event.id}". Expected a numeric on-chain ID.`);
       }
 
+      // Fetch the latest on-chain state to get the current ticket_count
       const onChainEvent = await getEvent(eventIdNum);
       if (!onChainEvent) {
-        throw new Error("Event not found on-chain");
+        throw new Error(`Event #${eventIdNum} not found on-chain. It may not have been confirmed yet.`);
+      }
+
+      if (onChainEvent.ticket_count >= onChainEvent.capacity) {
+        throw new Error("This event is sold out.");
       }
 
       const nextTicketId = onChainEvent.ticket_count + 1;
@@ -359,14 +427,15 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         PASSMEET_V1_PROGRAM_ID,
         "mint_ticket",
         [`${eventIdNum}u64`, `${nextTicketId}u64`],
-        100000
+        100_000
       );
 
       const txHash = await requestTransaction(aleoTransaction);
 
       if (txHash) {
-        await refreshTickets();
+        // Refresh data from chain after minting
         await refreshEvents();
+        await refreshTickets();
         return txHash;
       }
       return null;
@@ -378,6 +447,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     }
   }, [publicKey, requestTransaction, refreshTickets, refreshEvents]);
 
+  // ---- Verify Entry ----
   const verifyEntry = useCallback(async (ticket: Ticket): Promise<string | null> => {
     if (!publicKey || !requestTransaction || !requestRecords) return null;
 
@@ -413,7 +483,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
 
       if (!recordToUse) {
-        throw new Error("Could not find matching ticket record for this event.");
+        throw new Error("Could not find matching ticket record for this event in your wallet.");
       }
 
       const aleoTransaction = Transaction.createTransaction(
@@ -422,7 +492,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         PASSMEET_V1_PROGRAM_ID,
         "verify_entry",
         [recordToUse],
-        100000
+        100_000
       );
 
       const txHash = await requestTransaction(aleoTransaction);
@@ -444,8 +514,20 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     }
   }, [publicKey, requestTransaction, requestRecords]);
 
+  // ---- Helpers ----
+  async function pollForNewEventId(prevCount: number, maxAttempts = 15): Promise<number> {
+    for (let i = 0; i < maxAttempts; i++) {
+      await new Promise((r) => setTimeout(r, 2000));
+      const count = await getEventCounter();
+      if (count > prevCount) return count;
+    }
+    throw new Error("Timed out waiting for on-chain event confirmation");
+  }
+
+  // ---- Mount / wallet change ----
   useEffect(() => {
     if (publicKey) {
+      // Restore cached auth
       const stored = localStorage.getItem("passmeet_auth");
       if (stored) {
         try {
@@ -484,4 +566,4 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   );
 }
 
-export { PASSMEET_V1_PROGRAM_ID };
+export { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID };

@@ -37,7 +37,7 @@ export default function OrganizerPage() {
     setLoading(true);
     try {
       toast.info("Creating event on Aleo blockchain...");
-      
+
       const txHash = await createEvent(
         eventName,
         parseInt(capacity),
@@ -45,7 +45,7 @@ export default function OrganizerPage() {
         eventDate,
         location
       );
-      
+
       if (txHash) {
         toast.success(`Event created successfully!`, {
           description: `Transaction: ${txHash.slice(0, 16)}...`,
@@ -176,8 +176,8 @@ export default function OrganizerPage() {
                   />
                 </div>
               </div>
-              <Button 
-                type="submit" 
+              <Button
+                type="submit"
                 className="w-full bg-primary text-black hover:bg-primary/90 font-bold h-11 rounded-full"
                 disabled={loading || !publicKey || !isAuthenticated}
               >
@@ -238,11 +238,11 @@ export default function OrganizerPage() {
                         {event.status}
                       </Badge>
                       <Badge variant="outline" className="border-white/10 text-xs font-mono">
-                        {event.id.slice(0, 12)}...
+                        Event #{event.id}
                       </Badge>
                     </div>
                     <h3 className="mb-2 text-xl font-bold text-white">{event.name}</h3>
-                    
+
                     <div className="mt-4 space-y-2">
                       <div className="flex items-center gap-2 text-zinc-400">
                         <Calendar className="h-4 w-4" />

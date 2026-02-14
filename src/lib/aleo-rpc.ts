@@ -1,5 +1,7 @@
 import { ALEO_RPC_URL, PASSMEET_V1_PROGRAM_ID } from "./aleo";
 
+const ALEO_JSON_RPC = "https://testnet3.aleorpc.com";
+
 export interface OnChainEventInfo {
   id: number;
   organizer: string;
@@ -9,35 +11,66 @@ export interface OnChainEventInfo {
 }
 
 /**
- * Fetches a mapping value from the Aleo Provable explorer API.
- * The API returns values as quoted strings, e.g. "\"1u64\"" or "\"{...}\"".
+ * Fetches a mapping value via JSON-RPC (getMappingValue).
+ * Used as fallback when Provable REST fails.
  */
-async function fetchMappingValue(mappingName: string, key: string): Promise<string | null> {
+async function fetchMappingValueJsonRpc(
+  programId: string,
+  mappingName: string,
+  key: string
+): Promise<string | null> {
   try {
-    const url = `${ALEO_RPC_URL}/testnet/program/${PASSMEET_V1_PROGRAM_ID}/mapping/${mappingName}/${encodeURIComponent(key)}`;
+    const response = await fetch(ALEO_JSON_RPC, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        jsonrpc: "2.0",
+        id: 1,
+        method: "getMappingValue",
+        params: { program_id: programId, mapping_name: mappingName, key },
+      }),
+    });
+    const json = await response.json();
+    const result = json?.result;
+    return typeof result === "string" ? result : null;
+  } catch (error) {
+    console.error(`JSON-RPC fallback failed for ${mappingName}/${key}:`, error);
+    return null;
+  }
+}
+
+/**
+ * Fetches a mapping value from the Aleo Provable explorer API.
+ * Falls back to JSON-RPC (testnet3.aleorpc.com) if Provable returns null.
+ */
+async function fetchMappingValue(
+  programId: string,
+  mappingName: string,
+  key: string
+): Promise<string | null> {
+  try {
+    const url = `${ALEO_RPC_URL}/testnet/program/${programId}/mapping/${mappingName}/${encodeURIComponent(key)}`;
     const response = await fetch(url, {
       cache: "no-store",
       headers: { Accept: "application/json" },
     });
 
-    if (!response.ok) return null;
-
-    const text = await response.text();
-    if (!text || text.trim() === "null") return null;
-
-    // The API wraps the value in quotes, e.g. "\"1u64\"" — strip them
-    let cleaned = text.trim();
-    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
-      cleaned = cleaned.slice(1, -1);
+    if (response.ok) {
+      const text = await response.text();
+      if (text && text.trim() !== "null") {
+        let cleaned = text.trim();
+        if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+          cleaned = cleaned.slice(1, -1);
+        }
+        cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+        if (cleaned) return cleaned;
+      }
     }
-    // Unescape inner quotes and newlines
-    cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
-
-    return cleaned || null;
   } catch (error) {
-    console.error(`Failed to fetch mapping ${mappingName}/${key}:`, error);
-    return null;
+    console.error(`Provable fetch failed for ${mappingName}/${key}:`, error);
   }
+
+  return fetchMappingValueJsonRpc(programId, mappingName, key);
 }
 
 /**
@@ -45,7 +78,7 @@ async function fetchMappingValue(mappingName: string, key: string): Promise<stri
  * The event_counter mapping uses key 0u8 and returns the latest event ID (u64).
  */
 export async function getEventCounter(): Promise<number> {
-  const text = await fetchMappingValue("event_counter", "0u8");
+  const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "event_counter", "0u8");
   if (!text) return 0;
   const match = text.match(/(\d+)u64/);
   return match ? parseInt(match[1], 10) : 0;
@@ -56,7 +89,7 @@ export async function getEventCounter(): Promise<number> {
  */
 export async function getEvent(eventId: number): Promise<OnChainEventInfo | null> {
   const key = `${eventId}u64`;
-  const text = await fetchMappingValue("events", key);
+  const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "events", key);
   if (!text) return null;
   try {
     return parseEventInfo(text, eventId);

@@ -4,13 +4,13 @@ import { useState } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
 import { Button } from "@/components/ui/button";
-import { 
-  Ticket as TicketIcon, 
-  Calendar, 
-  MapPin, 
-  ShieldCheck, 
-  ArrowRight, 
-  Loader2, 
+import {
+  Ticket as TicketIcon,
+  Calendar,
+  MapPin,
+  ShieldCheck,
+  ArrowRight,
+  Loader2,
   CheckCircle2,
   Lock,
   QrCode,
@@ -45,15 +45,15 @@ export default function TicketsPage() {
       toast.info("Minting private ticket on Aleo...", {
         description: "Generating ZK proof for anonymous ownership"
       });
-      
+
       const event = events.find(e => e.id === eventId);
       if (!event) {
         toast.error("Event not found");
         return;
       }
-      
+
       const txId = await buyTicket(event);
-      
+
       if (txId) {
         toast.success("Ticket minted successfully!", {
           description: `Transaction: ${txId.slice(0, 16)}...`,
@@ -79,9 +79,9 @@ export default function TicketsPage() {
       toast.info("Generating Zero-Knowledge Entry Proof...", {
         description: "Your identity remains hidden from the verifier"
       });
-      
+
       const txId = await verifyEntry(ticket);
-      
+
       if (txId) {
         toast.success("Entry verified! Access granted.", {
           description: "ZK proof accepted - your wallet address was never revealed"
@@ -180,7 +180,7 @@ export default function TicketsPage() {
                       </div>
                     </div>
                     <div className="mt-auto pt-6">
-                      <Button 
+                      <Button
                         className="w-full bg-primary text-black hover:bg-primary/90 font-bold h-11 rounded-full"
                         onClick={() => handleBuyTicket(event.id)}
                         disabled={loading === `buy-${event.id}` || !publicKey || event.ticketCount >= event.capacity}
@@ -293,22 +293,29 @@ export default function TicketsPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Tx Hash</p>
-                        <a 
-                          href={`https://explorer.provable.com/testnet/transaction/${ticket.txHash}`}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          className="mt-1 font-mono text-xs text-primary hover:underline flex items-center gap-1"
-                        >
-                          {ticket.txHash.slice(0, 16)}...
-                          <ExternalLink className="h-3 w-3" />
-                        </a>
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Status</p>
+                        {ticket.txHash ? (
+                          <a
+                            href={`https://explorer.provable.com/testnet/transaction/${ticket.txHash}`}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 font-mono text-xs text-primary hover:underline flex items-center gap-1"
+                          >
+                            {ticket.txHash.slice(0, 16)}...
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
+                        ) : (
+                          <p className="mt-1 font-mono text-xs text-primary flex items-center gap-1">
+                            <ShieldCheck className="h-3 w-3" />
+                            On-Chain Record
+                          </p>
+                        )}
                       </div>
                     </div>
 
                     <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:justify-end">
-                      <Button 
-                        variant="outline" 
+                      <Button
+                        variant="outline"
                         className="border-white/10 bg-white/5 font-bold hover:bg-white/10 text-white rounded-full"
                         onClick={() => handleGenerateProof(ticket)}
                         disabled={loading === `proof-${ticket.id}` || ticket.status === "Used"}
@@ -341,7 +348,7 @@ export default function TicketsPage() {
                   {publicKey ? "You haven't minted any tickets yet. Browse available events to get started." : "Connect your wallet to view your tickets."}
                 </p>
                 {publicKey && (
-                  <Button 
+                  <Button
                     className="mt-8 bg-primary text-black font-bold rounded-full"
                     onClick={() => setActiveTab("available")}
                   >
