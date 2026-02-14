@@ -60,12 +60,15 @@ export default function TicketsPage() {
         console.log("[PassMeet Tickets] buyTicket: success", { txId: txId === "PENDING" ? "confirming" : txId });
         const explorerUrl = txId !== "PENDING" ? getTransactionUrl(txId) : null;
         toast.success("Ticket minted successfully!", {
-          description: explorerUrl ? `Transaction: ${txId.slice(0, 16)}...` : "Transaction submitted. Check your wallet for the on-chain tx ID.",
+          description: explorerUrl
+            ? `Transaction: ${txId.slice(0, 16)}...`
+            : "Transaction submitted. If your ticket doesn't appear, click Refresh in a few seconds.",
           ...(explorerUrl && {
             action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
           })
         });
         setActiveTab("tickets");
+        setTimeout(() => refreshTickets({ silent: true }), 8000);
       }
     } catch (error) {
       console.log("[PassMeet Tickets] buyTicket: error", error);
