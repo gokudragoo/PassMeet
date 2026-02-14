@@ -704,10 +704,26 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
 
       // Pass record - must be string in Aleo plaintext format for Leo wallet
-      const recordInput =
-        typeof recordToUse === "string"
-          ? recordToUse
-          : (recordToUse as { toString?: () => string }).toString?.() ?? String(recordToUse);
+      let recordInput: string;
+      if (typeof recordToUse === "string") {
+        recordInput = recordToUse;
+      } else {
+        const r = recordToUse as Record<string, unknown>;
+        const str = r?.toString?.() ?? r?.string ?? r?.record;
+        if (typeof str === "string") {
+          recordInput = str;
+        } else {
+          // Build Aleo record format from object (wallet may return plain object via postMessage)
+          const data = (r?.data ?? r?.plaintext ?? r) as Record<string, unknown>;
+          const owner = data?.owner ?? r?.owner ?? "";
+          const eventId = data?.event_id ?? r?.event_id ?? "";
+          const ticketId = data?.ticket_id ?? r?.ticket_id ?? "";
+          const nonce = data?._nonce ?? r?._nonce ?? "";
+          const version = data?.version ?? r?.version ?? "1u8.public";
+          const fmt = (v: unknown) => (typeof v === "string" ? v : v != null ? String(v) : "");
+          recordInput = `{\nowner: ${fmt(owner)},\nevent_id: ${fmt(eventId)},\nticket_id: ${fmt(ticketId)},\n_nonce: ${fmt(nonce)},\nversion: ${fmt(version)}\n}`;
+        }
+      }
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "verify_entry",
