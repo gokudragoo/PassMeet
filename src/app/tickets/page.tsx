@@ -57,10 +57,10 @@ export default function TicketsPage() {
       const txId = await buyTicket(event);
 
       if (txId) {
-        console.log("[PassMeet Tickets] buyTicket: success", { txId });
-        const explorerUrl = getTransactionUrl(txId);
+        console.log("[PassMeet Tickets] buyTicket: success", { txId: txId === "PENDING" ? "confirming" : txId });
+        const explorerUrl = txId !== "PENDING" ? getTransactionUrl(txId) : null;
         toast.success("Ticket minted successfully!", {
-          description: explorerUrl ? `Transaction: ${txId.slice(0, 16)}...` : "Transaction confirmed on-chain.",
+          description: explorerUrl ? `Transaction: ${txId.slice(0, 16)}...` : "Transaction submitted. Check your wallet for the on-chain tx ID.",
           ...(explorerUrl && {
             action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
           })
@@ -92,8 +92,14 @@ export default function TicketsPage() {
       const txId = await verifyEntry(ticket);
 
       if (txId) {
-        console.log("[PassMeet Tickets] verifyEntry: success", { txId });
+        console.log("[PassMeet Tickets] verifyEntry: success", { txId: txId === "PENDING" ? "confirming" : txId });
+        const explorerUrl = txId !== "PENDING" ? getTransactionUrl(txId) : null;
         toast.success("Entry verified! Access granted.", {
+          description: explorerUrl ? `Transaction: ${txId.slice(0, 16)}...` : "Verification submitted on-chain.",
+          ...(explorerUrl && {
+            action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
+          })
+        });
           description: "ZK proof accepted - your wallet address was never revealed"
         });
       }

@@ -481,7 +481,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         await refreshEvents();
         await refreshTickets();
         LOG("buyTicket: success", { onChainTxHash: txHash ?? "pending" });
-        return txHash;
+        return txHash ?? "PENDING";
       }
       LOG("buyTicket: no txId returned");
       return null;
@@ -554,7 +554,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           )
         );
         LOG("verifyEntry: success", { onChainTxHash: txHash ?? "pending" });
-        return txHash;
+        return txHash ?? "PENDING";
       }
       LOG("verifyEntry: no txId returned");
       return null;

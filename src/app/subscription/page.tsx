@@ -28,17 +28,21 @@ const TIER_NAMES: Record<number, string> = {
   2: "Enterprise",
 };
 
+function isOnChainTxHash(id: string): boolean {
+  return typeof id === "string" && id.startsWith("at1") && id.length >= 61;
+}
+
 async function pollForTxHash(
   tempId: string,
   transactionStatus: (id: string) => Promise<{ status: string; transactionId?: string }>,
-  maxAttempts = 30
+  maxAttempts = 45
 ): Promise<string | null> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 2000));
     const res = await transactionStatus(tempId);
-    if (res.transactionId) return res.transactionId;
+    if (res.transactionId && isOnChainTxHash(res.transactionId)) return res.transactionId;
     const status = res.status?.toLowerCase();
-    if (status === "accepted" || status === "rejected" || status === "failed") return res.transactionId ?? null;
+    if (status === "rejected" || status === "failed") return null;
   }
   return null;
 }
