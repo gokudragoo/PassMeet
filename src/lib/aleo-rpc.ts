@@ -1,7 +1,5 @@
 import { ALEO_RPC_URL, PASSMEET_V1_PROGRAM_ID } from "./aleo";
 
-const ALEO_JSON_RPC = "https://testnet3.aleorpc.com";
-
 export interface OnChainEventInfo {
   id: number;
   organizer: string;
@@ -10,30 +8,36 @@ export interface OnChainEventInfo {
   price: number;
 }
 
+/**
+ * Fetches a mapping value from the Aleo Provable explorer API.
+ * The API returns values as quoted strings, e.g. "\"1u64\"" or "\"{...}\"".
+ */
 async function fetchMappingValue(mappingName: string, key: string): Promise<string | null> {
-  const provableUrl = `${ALEO_RPC_URL}/program/${PASSMEET_V1_PROGRAM_ID}/mapping/${mappingName}/${encodeURIComponent(key)}`;
-  const response = await fetch(provableUrl);
-  if (response.ok) {
-    const text = await response.text();
-    if (text?.trim()) return text.trim();
-  }
+  try {
+    const url = `${ALEO_RPC_URL}/testnet/program/${PASSMEET_V1_PROGRAM_ID}/mapping/${mappingName}/${encodeURIComponent(key)}`;
+    const response = await fetch(url, {
+      cache: "no-store",
+      headers: { Accept: "application/json" },
+    });
 
-  const rpcResponse = await fetch(ALEO_JSON_RPC, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      jsonrpc: "2.0",
-      id: 1,
-      method: "getMappingValue",
-      params: {
-        program_id: PASSMEET_V1_PROGRAM_ID,
-        mapping_name: mappingName,
-        key
-      }
-    })
-  });
-  const json = await rpcResponse.json();
-  return json?.result ?? null;
+    if (!response.ok) return null;
+
+    const text = await response.text();
+    if (!text || text.trim() === "null") return null;
+
+    // The API wraps the value in quotes, e.g. "\"1u64\"" — strip them
+    let cleaned = text.trim();
+    if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+      cleaned = cleaned.slice(1, -1);
+    }
+    // Unescape inner quotes and newlines
+    cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+
+    return cleaned || null;
+  } catch (error) {
+    console.error(`Failed to fetch mapping ${mappingName}/${key}:`, error);
+    return null;
+  }
 }
 
 /**
@@ -63,39 +67,26 @@ export async function getEvent(eventId: number): Promise<OnChainEventInfo | null
 
 /**
  * Parses Aleo EventInfo struct string into OnChainEventInfo.
- * Format may vary: could be JSON or Aleo struct notation.
+ * The API returns Aleo struct notation like:
+ *   { id: 1u64, organizer: aleo1..., capacity: 2u32, ticket_count: 0u32, price: 100000u64 }
  */
 function parseEventInfo(raw: string, eventId: number): OnChainEventInfo | null {
   const trimmed = raw.trim();
 
-  if (trimmed.startsWith("{")) {
-    try {
-      const parsed = JSON.parse(trimmed);
-      return {
-        id: parsed.id ?? eventId,
-        organizer: parsed.organizer ?? "",
-        capacity: parseInt(parsed.capacity, 10) || 0,
-        ticket_count: parseInt(parsed.ticket_count, 10) || 0,
-        price: parseInt(parsed.price, 10) || 0,
-      };
-    } catch {
-      // Fall through to regex parsing
-    }
-  }
-
+  // Use regex to extract fields from Aleo struct notation
   const idMatch = trimmed.match(/id:\s*(\d+)u64/);
-  const organizerMatch = trimmed.match(/organizer:\s*([a-z0-9]+\.private|aleo1[a-z0-9]+)/);
+  const organizerMatch = trimmed.match(/organizer:\s*(aleo1[a-z0-9]+)/);
   const capacityMatch = trimmed.match(/capacity:\s*(\d+)u32/);
   const ticketCountMatch = trimmed.match(/ticket_count:\s*(\d+)u32/);
   const priceMatch = trimmed.match(/price:\s*(\d+)u64/);
 
-  if (!capacityMatch || !ticketCountMatch || !priceMatch) return null;
+  if (!capacityMatch || !priceMatch) return null;
 
   return {
     id: idMatch ? parseInt(idMatch[1], 10) : eventId,
-    organizer: organizerMatch ? organizerMatch[1].replace(".private", "") : "",
+    organizer: organizerMatch ? organizerMatch[1] : "",
     capacity: parseInt(capacityMatch[1], 10),
-    ticket_count: parseInt(ticketCountMatch[1], 10),
+    ticket_count: ticketCountMatch ? parseInt(ticketCountMatch[1], 10) : 0,
     price: parseInt(priceMatch[1], 10),
   };
 }
