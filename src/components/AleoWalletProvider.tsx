@@ -1,15 +1,29 @@
 "use client";
 
-import { useState, useEffect, ReactNode, useMemo } from "react";
+import { useState, useEffect, ReactNode } from "react";
 import { AnimatePresence } from "framer-motion";
-import { WalletProvider } from "@demox-labs/aleo-wallet-adapter-react";
-import { WalletModalProvider } from "@demox-labs/aleo-wallet-adapter-reactui";
-import { DecryptPermission, WalletAdapterNetwork } from "@demox-labs/aleo-wallet-adapter-base";
+import { AleoWalletProvider as ProvableWalletProvider } from "@provablehq/aleo-wallet-adaptor-react";
+import { WalletModalProvider } from "@provablehq/aleo-wallet-adaptor-react-ui";
+import { LeoWalletAdapter } from "@provablehq/aleo-wallet-adaptor-leo";
+import { PuzzleWalletAdapter } from "@provablehq/aleo-wallet-adaptor-puzzle";
+import { FoxWalletAdapter } from "@provablehq/aleo-wallet-adaptor-fox";
+import { ShieldWalletAdapter } from "@provablehq/aleo-wallet-adaptor-shield";
+import { Network } from "@provablehq/aleo-types";
+import { DecryptPermission } from "@provablehq/aleo-wallet-adaptor-core";
 import { PassMeetProvider } from "@/context/PassMeetContext";
 import { SplashScreen } from "@/components/SplashScreen";
 import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
 
-import "@demox-labs/aleo-wallet-adapter-reactui/styles.css";
+import "@provablehq/aleo-wallet-adaptor-react-ui/dist/styles.css";
+
+const wallets = [
+  new LeoWalletAdapter(),
+  new PuzzleWalletAdapter(),
+  new FoxWalletAdapter(),
+  new ShieldWalletAdapter(),
+];
+
+const programs = [PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, "credits.aleo"];
 
 export function AleoWalletProvider({ children }: { children: ReactNode }) {
   const [showSplash, setShowSplash] = useState(true);
@@ -23,36 +37,6 @@ export function AleoWalletProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const programs = useMemo(() => [
-    PASSMEET_V1_PROGRAM_ID, 
-    PASSMEET_SUBS_PROGRAM_ID, 
-    "credits.aleo"
-  ], []);
-
-  const wallets = useMemo(() => {
-    if (typeof window === "undefined") return [];
-    
-    const { LeoWalletAdapter, FoxWalletAdapter, PuzzleWalletAdapter } = require("aleo-adapters");
-    
-    return [
-      new LeoWalletAdapter({
-        appName: "PassMeet",
-      }),
-      new FoxWalletAdapter({
-        appName: "PassMeet",
-      }),
-      new PuzzleWalletAdapter({
-        appName: "PassMeet",
-        appDescription: "Private Event Access & Ticket Verification on Aleo",
-        appIconUrl: "https://passmeet.vercel.app/logo.png",
-        programIdPermissions: {
-          [WalletAdapterNetwork.TestnetBeta]: programs,
-          [WalletAdapterNetwork.Testnet]: programs,
-        },
-      }),
-    ];
-  }, [programs]);
-
   const handleSplashComplete = () => {
     sessionStorage.setItem("passmeet_splash_seen", "true");
     setShowSplash(false);
@@ -63,12 +47,13 @@ export function AleoWalletProvider({ children }: { children: ReactNode }) {
   }
 
   return (
-    <WalletProvider
+    <ProvableWalletProvider
       wallets={wallets}
+      network={Network.TESTNET}
+      autoConnect={true}
       decryptPermission={DecryptPermission.UponRequest}
-      network={WalletAdapterNetwork.Testnet}
       programs={programs}
-      autoConnect
+      onError={(error) => console.error("Wallet error:", error.message)}
     >
       <WalletModalProvider>
         <PassMeetProvider>
@@ -78,6 +63,6 @@ export function AleoWalletProvider({ children }: { children: ReactNode }) {
           {!showSplash && children}
         </PassMeetProvider>
       </WalletModalProvider>
-    </WalletProvider>
+    </ProvableWalletProvider>
   );
 }
