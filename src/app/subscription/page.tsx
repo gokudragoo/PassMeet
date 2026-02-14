@@ -147,6 +147,7 @@ export default function SubscriptionPage() {
   ];
 
   const handleSubscribe = async (tier: typeof tiers[0]) => {
+    console.log("[PassMeet Subscription] handleSubscribe: start", { tier: tier.name });
     if (!address) {
       toast.error("Please connect your wallet first");
       return;
@@ -173,9 +174,11 @@ export default function SubscriptionPage() {
       });
 
       const tempId = result?.transactionId;
+      console.log("[PassMeet Subscription] subscribe: tx submitted", { tempId });
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
         const finalTxHash = txHash ?? tempId;
+        console.log("[PassMeet Subscription] subscribe: success", { txHash: finalTxHash });
         setCurrentTier(tier.name);
         localStorage.setItem("passmeet_subscription", JSON.stringify({
           tier: tier.name,
@@ -191,9 +194,11 @@ export default function SubscriptionPage() {
           }
         });
       } else {
+        console.log("[PassMeet Subscription] subscribe: no txId");
         toast.error("Transaction was not confirmed");
       }
     } catch (error) {
+      console.log("[PassMeet Subscription] subscribe: error", error);
       console.error(error);
       const errorMessage = error instanceof Error ? error.message : "Subscription failed";
       toast.error(errorMessage);

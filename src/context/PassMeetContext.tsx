@@ -152,12 +152,14 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const authenticateWithSignature = useCallback(async (): Promise<boolean> => {
     if (!address) return false;
 
+    LOG("authenticateWithSignature: starting");
     try {
       if (signMessage) {
         const message = `PassMeet Authentication\nTimestamp: ${Date.now()}\nAddress: ${address}`;
         const signature = await signMessage(message);
 
         if (signature) {
+          LOG("authenticateWithSignature: success (signed)");
           setIsAuthenticated(true);
           localStorage.setItem("passmeet_auth", JSON.stringify({
             address,
@@ -167,6 +169,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         }
         return false;
       } else {
+        LOG("authenticateWithSignature: success (connect-only)");
         setIsAuthenticated(true);
         localStorage.setItem("passmeet_auth", JSON.stringify({
           address,

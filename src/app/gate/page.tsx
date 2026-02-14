@@ -53,11 +53,13 @@ export default function GatePage() {
   };
 
   const handleSelectTicket = async (ticket: Ticket) => {
+    console.log("[PassMeet Gate] handleSelectTicket: start", { ticketId: ticket.id, eventName: ticket.eventName });
     setStatus("verifying");
     toast.info("Generating Zero-Knowledge Proof...");
 
     try {
       const txId = await verifyEntry(ticket);
+      console.log("[PassMeet Gate] verifyEntry: result", { txId });
       
       if (txId) {
         setVerificationData({
@@ -68,12 +70,15 @@ export default function GatePage() {
           txHash: txId
         });
         setStatus("success");
+        console.log("[PassMeet Gate] verifyEntry: success", { txHash: txId });
         toast.success("ZK-Proof Verified! Access Granted.");
       } else {
         setStatus("error");
+        console.log("[PassMeet Gate] verifyEntry: failed (no txId)");
         toast.error("Verification failed");
       }
     } catch (error) {
+      console.log("[PassMeet Gate] verifyEntry: error", error);
       console.error(error);
       setStatus("error");
       const errorMessage = error instanceof Error ? error.message : "Invalid or Used Proof! Access Denied.";
