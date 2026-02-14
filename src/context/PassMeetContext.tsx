@@ -317,14 +317,15 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           if (attempt === 2) throw e;
         }
       }
-      LOG("refreshTickets: records fetched", { count: records?.length ?? 0 });
-      console.log("[PassMeet] refreshTickets: records count", records?.length ?? 0);
-      if (records?.length > 0) {
+      records = records ?? [];
+      LOG("refreshTickets: records fetched", { count: records.length });
+      console.log("[PassMeet] refreshTickets: records count", records.length);
+      if (records.length > 0) {
         LOG("refreshTickets: raw record sample", JSON.stringify(records[0]).slice(0, 500));
       }
       const tickets: Ticket[] = [];
 
-      if (records && records.length > 0) {
+      if (records.length > 0) {
         // Fetch current events for name/date/location lookup
         const maxEventId = await getEventCounter();
         const eventMap: Record<string, Event> = {};
