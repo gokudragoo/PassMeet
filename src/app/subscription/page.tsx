@@ -2,8 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
-import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
-import { Transaction, WalletAdapterNetwork } from "@demox-labs/aleo-wallet-adapter-base";
+import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { Button } from "@/components/ui/button";
 import { 
   Check, 
@@ -29,8 +28,23 @@ const TIER_NAMES: Record<number, string> = {
   2: "Enterprise",
 };
 
+async function pollForTxHash(
+  tempId: string,
+  transactionStatus: (id: string) => Promise<{ status: string; transactionId?: string }>,
+  maxAttempts = 30
+): Promise<string | null> {
+  for (let i = 0; i < maxAttempts; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    const res = await transactionStatus(tempId);
+    if (res.transactionId) return res.transactionId;
+    const status = res.status?.toLowerCase();
+    if (status === "accepted" || status === "rejected" || status === "failed") return res.transactionId ?? null;
+  }
+  return null;
+}
+
 export default function SubscriptionPage() {
-  const { publicKey, requestTransaction } = useWallet();
+  const { address, executeTransaction, transactionStatus } = useWallet();
   const { isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState("Free");
@@ -38,14 +52,14 @@ export default function SubscriptionPage() {
 
   useEffect(() => {
     async function fetchTier() {
-      if (!publicKey) {
+      if (!address) {
         setTierLoading(false);
         setCurrentTier("Free");
         return;
       }
       setTierLoading(true);
       try {
-        const sub = await getSubscription(publicKey);
+        const sub = await getSubscription(address);
         if (sub && sub.tier > 0 && sub.expiry > Math.floor(Date.now() / 1000)) {
           setCurrentTier(TIER_NAMES[sub.tier] ?? "Free");
         } else {
@@ -53,7 +67,7 @@ export default function SubscriptionPage() {
           if (stored) {
             try {
               const parsed = JSON.parse(stored);
-              if (parsed.address === publicKey) {
+              if (parsed.address === address) {
                 setCurrentTier(parsed.tier ?? "Free");
               }
             } catch {
@@ -68,7 +82,7 @@ export default function SubscriptionPage() {
         if (stored) {
           try {
             const parsed = JSON.parse(stored);
-            if (parsed.address === publicKey) setCurrentTier(parsed.tier ?? "Free");
+            if (parsed.address === address) setCurrentTier(parsed.tier ?? "Free");
           } catch {
             setCurrentTier("Free");
           }
@@ -80,7 +94,7 @@ export default function SubscriptionPage() {
       }
     }
     fetchTier();
-  }, [publicKey]);
+  }, [address]);
 
   const tiers = [
     {
@@ -133,7 +147,7 @@ export default function SubscriptionPage() {
   ];
 
   const handleSubscribe = async (tier: typeof tiers[0]) => {
-    if (!publicKey) {
+    if (!address) {
       toast.error("Please connect your wallet first");
       return;
     }
@@ -141,7 +155,7 @@ export default function SubscriptionPage() {
       toast.error("Please sign to verify your identity first");
       return;
     }
-    if (!requestTransaction) {
+    if (!executeTransaction) {
       toast.error("Wallet does not support transactions");
       return;
     }
@@ -151,30 +165,29 @@ export default function SubscriptionPage() {
     try {
       toast.info(`Initiating Subscription to ${tier.name} on Aleo...`);
 
-      const aleoTransaction = Transaction.createTransaction(
-        publicKey,
-        WalletAdapterNetwork.Testnet,
-        PASSMEET_SUBS_PROGRAM_ID,
-        "subscribe",
-        [`${tier.id}u8`, "2592000u32"],
-        100000
-      );
+      const result = await executeTransaction({
+        program: PASSMEET_SUBS_PROGRAM_ID,
+        function: "subscribe",
+        inputs: [`${tier.id}u8`, "2592000u32"],
+        fee: 100000,
+      });
 
-      const txHash = await requestTransaction(aleoTransaction);
-
-      if (txHash) {
+      const tempId = result?.transactionId;
+      if (tempId) {
+        const txHash = await pollForTxHash(tempId, transactionStatus);
+        const finalTxHash = txHash ?? tempId;
         setCurrentTier(tier.name);
         localStorage.setItem("passmeet_subscription", JSON.stringify({
           tier: tier.name,
-          address: publicKey,
+          address,
           timestamp: Date.now(),
-          txHash
+          txHash: finalTxHash
         }));
         toast.success(`Subscribed to ${tier.name}!`, {
-          description: `Transaction: ${txHash.slice(0, 16)}...`,
+          description: `Transaction: ${finalTxHash.slice(0, 16)}...`,
           action: {
             label: "View",
-            onClick: () => window.open(getTransactionUrl(txHash), "_blank")
+            onClick: () => window.open(getTransactionUrl(finalTxHash), "_blank")
           }
         });
       } else {
@@ -251,7 +264,7 @@ export default function SubscriptionPage() {
 
             <Button
               onClick={() => handleSubscribe(tier)}
-              disabled={loading !== null || currentTier === tier.name || !publicKey}
+              disabled={loading !== null || currentTier === tier.name || !address}
               className={`w-full rounded-full h-12 font-bold transition-all ${
                 tier.highlight 
                   ? "bg-primary text-black hover:bg-primary/90" 
@@ -260,7 +273,7 @@ export default function SubscriptionPage() {
             >
               {loading === tier.name ? (
                 <Loader2 className="h-5 w-5 animate-spin" />
-              ) : !publicKey ? (
+              ) : !address ? (
                 <>
                   <Wallet className="mr-2 h-4 w-4" />
                   Connect Wallet

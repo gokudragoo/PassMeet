@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
+import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,7 +14,7 @@ import { Badge } from "@/components/ui/badge";
 import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
 
 export default function OrganizerPage() {
-  const { publicKey } = useWallet();
+  const { address } = useWallet();
   const { events, isLoading, createEvent, refreshEvents, isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState(false);
   const [eventName, setEventName] = useState("");
@@ -25,7 +25,7 @@ export default function OrganizerPage() {
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!publicKey) {
+    if (!address) {
       toast.error("Please connect your wallet first");
       return;
     }
@@ -75,8 +75,8 @@ export default function OrganizerPage() {
     }
   };
 
-  const myEvents = events.filter(e => e.organizerAddress === publicKey);
-  const otherUserEvents = events.filter(e => e.organizerAddress !== publicKey);
+  const myEvents = events.filter(e => e.organizerAddress === address);
+  const otherUserEvents = events.filter(e => e.organizerAddress !== address);
   const totalAttendees = myEvents.reduce((sum, e) => sum + e.ticketCount, 0);
   const totalCapacity = myEvents.reduce((sum, e) => sum + e.capacity, 0);
 
@@ -102,7 +102,7 @@ export default function OrganizerPage() {
             <RefreshCw className={`mr-2 h-4 w-4 ${isLoading ? "animate-spin" : ""}`} />
             Refresh
           </Button>
-          {!publicKey && (
+          {!address && (
             <div className="flex items-center gap-2 rounded-lg bg-yellow-500/10 p-4 text-yellow-500 border border-yellow-500/20">
               <AlertCircle className="h-5 w-5" />
               <span className="text-sm font-medium">Connect wallet to manage events</span>
@@ -185,14 +185,14 @@ export default function OrganizerPage() {
               <Button
                 type="submit"
                 className="w-full bg-primary text-black hover:bg-primary/90 font-bold h-11 rounded-full"
-                disabled={loading || !publicKey || !isAuthenticated}
+                disabled={loading || !address || !isAuthenticated}
               >
                 {loading ? (
                   <>
                     <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                     Deploying...
                   </>
-                ) : !publicKey ? (
+                ) : !address ? (
                   "Connect Wallet First"
                 ) : !isAuthenticated ? (
                   "Sign to Verify First"
@@ -291,7 +291,7 @@ export default function OrganizerPage() {
                 <Calendar className="h-12 w-12 text-muted-foreground mb-4" />
                 <h3 className="text-xl font-bold text-white">No Events Yet</h3>
                 <p className="mt-2 text-muted-foreground max-w-sm">
-                  {publicKey ? "Create your first on-chain event using the form." : "Connect your wallet to create events."}
+                  {address ? "Create your first on-chain event using the form." : "Connect your wallet to create events."}
                 </p>
               </div>
             )}

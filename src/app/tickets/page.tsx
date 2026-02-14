@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion } from "framer-motion";
-import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
+import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { Button } from "@/components/ui/button";
 import {
   Ticket as TicketIcon,
@@ -26,13 +26,13 @@ import { usePassMeet, Ticket } from "@/context/PassMeetContext";
 import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
 
 export default function TicketsPage() {
-  const { publicKey } = useWallet();
+  const { address } = useWallet();
   const { events, myTickets, isLoading, buyTicket, verifyEntry, refreshEvents, refreshTickets, isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("available");
 
   const handleBuyTicket = async (eventId: string) => {
-    if (!publicKey) {
+    if (!address) {
       toast.error("Please connect your wallet first");
       return;
     }
@@ -192,14 +192,14 @@ export default function TicketsPage() {
                       <Button
                         className="w-full bg-primary text-black hover:bg-primary/90 font-bold h-11 rounded-full"
                         onClick={() => handleBuyTicket(event.id)}
-                        disabled={loading === `buy-${event.id}` || !publicKey || event.ticketCount >= event.capacity}
+                        disabled={loading === `buy-${event.id}` || !address || event.ticketCount >= event.capacity}
                       >
                         {loading === `buy-${event.id}` ? (
                           <>
                             <Loader2 className="mr-2 h-4 w-4 animate-spin" />
                             Minting...
                           </>
-                        ) : !publicKey ? (
+                        ) : !address ? (
                           <>
                             <Wallet className="mr-2 h-4 w-4" />
                             Connect Wallet
@@ -360,9 +360,9 @@ export default function TicketsPage() {
                 </div>
                 <h3 className="mt-6 text-xl font-bold text-white">No Tickets Yet</h3>
                 <p className="mt-2 max-w-sm text-muted-foreground">
-                  {publicKey ? "You haven't minted any tickets yet. Browse available events to get started." : "Connect your wallet to view your tickets."}
+                  {address ? "You haven't minted any tickets yet. Browse available events to get started." : "Connect your wallet to view your tickets."}
                 </p>
-                {publicKey && (
+                {address && (
                   <Button
                     className="mt-8 bg-primary text-black font-bold rounded-full"
                     onClick={() => setActiveTab("available")}

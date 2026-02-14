@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, ReactNode } from "react";
+import { useState, useEffect, useMemo, ReactNode } from "react";
 import { AnimatePresence } from "framer-motion";
 import { AleoWalletProvider as ProvableWalletProvider } from "@provablehq/aleo-wallet-adaptor-react";
 import { WalletModalProvider } from "@provablehq/aleo-wallet-adaptor-react-ui";
@@ -16,18 +16,21 @@ import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
 
 import "@provablehq/aleo-wallet-adaptor-react-ui/dist/styles.css";
 
-const wallets = [
-  new LeoWalletAdapter(),
-  new PuzzleWalletAdapter(),
-  new FoxWalletAdapter(),
-  new ShieldWalletAdapter(),
-];
-
 const programs = [PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, "credits.aleo"];
 
 export function AleoWalletProvider({ children }: { children: ReactNode }) {
   const [showSplash, setShowSplash] = useState(true);
   const [mounted, setMounted] = useState(false);
+
+  const wallets = useMemo(() => {
+    if (typeof window === "undefined") return [];
+    return [
+      new LeoWalletAdapter(),
+      new PuzzleWalletAdapter(),
+      new FoxWalletAdapter(),
+      new ShieldWalletAdapter(),
+    ];
+  }, []);
 
   useEffect(() => {
     setMounted(true);

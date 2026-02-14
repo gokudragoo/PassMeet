@@ -3,8 +3,8 @@
 import { useState } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
-import { WalletMultiButton } from "@demox-labs/aleo-wallet-adapter-reactui";
+import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
+import { WalletMultiButton } from "@provablehq/aleo-wallet-adaptor-react-ui";
 import { Button } from "@/components/ui/button";
 import { 
   LogOut, 
@@ -23,7 +23,7 @@ import { toast } from "sonner";
 
 export function Navbar() {
   const pathname = usePathname();
-  const { publicKey, disconnect } = useWallet();
+  const { address, disconnect } = useWallet();
   const { isAuthenticated, authenticateWithSignature } = usePassMeet();
   const [isAuthenticating, setIsAuthenticating] = useState(false);
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
@@ -99,7 +99,7 @@ export function Navbar() {
             {mobileMenuOpen ? <X className="h-5 w-5" /> : <Menu className="h-5 w-5" />}
           </Button>
 
-          {publicKey ? (
+          {address ? (
             <div className="flex items-center gap-3">
               {!isAuthenticated && (
                 <Button
@@ -125,7 +125,7 @@ export function Navbar() {
                   )}
                 </div>
                 <span className="text-sm font-medium text-white">
-                  {publicKey.slice(0, 6)}...{publicKey.slice(-4)}
+                  {address.slice(0, 6)}...{address.slice(-4)}
                 </span>
               </div>
               <Button
@@ -172,7 +172,7 @@ export function Navbar() {
                   </Link>
                 );
               })}
-              {publicKey && !isAuthenticated && (
+              {address && !isAuthenticated && (
                 <Button
                   variant="outline"
                   onClick={handleAuthenticate}

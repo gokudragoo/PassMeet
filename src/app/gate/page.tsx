@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
-import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
+import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
@@ -31,13 +31,13 @@ interface VerificationData {
 }
 
 export default function GatePage() {
-  const { publicKey } = useWallet();
+  const { address } = useWallet();
   const { myTickets, verifyEntry, isAuthenticated } = usePassMeet();
   const [status, setStatus] = useState<"idle" | "selecting" | "verifying" | "success" | "error">("idle");
   const [verificationData, setVerificationData] = useState<VerificationData | null>(null);
 
   const handleStartScan = () => {
-    if (!publicKey) {
+    if (!address) {
       toast.error("Please connect your wallet first");
       return;
     }
@@ -123,9 +123,9 @@ export default function GatePage() {
                 size="lg" 
                 className="rounded-full bg-primary px-12 text-black font-bold h-12"
                 onClick={handleStartScan}
-                  disabled={!publicKey}
+                  disabled={!address}
                 >
-                  {!publicKey ? (
+                  {!address ? (
                   <>
                     <Wallet className="mr-2 h-5 w-5" />
                     Connect Wallet First
