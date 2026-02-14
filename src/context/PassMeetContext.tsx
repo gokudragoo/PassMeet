@@ -273,11 +273,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   }, []);
 
   // ---- Refresh Tickets (from wallet records) ----
-  const refreshTickets = useCallback(async (): Promise<number> => {
+  const refreshTickets = useCallback(async (opts?: { silent?: boolean }): Promise<number> => {
     if (!address || !requestRecords) return 0;
 
-    LOG("refreshTickets: starting...", { address: address.slice(0, 12) + "..." });
-    setIsLoading(true);
+    const silent = opts?.silent ?? false;
+    LOG("refreshTickets: starting...", { address: address.slice(0, 12) + "...", silent });
+    if (!silent) setIsDataLoading(true);
     try {
       const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
       LOG("refreshTickets: records fetched", { count: records?.length ?? 0 });
@@ -362,7 +363,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       setMyTickets([]);
       return 0;
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsDataLoading(false);
     }
   }, [address, requestRecords]);
 
@@ -378,8 +379,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
     LOG("createEvent: starting", { name, capacity, price, eventDate, eventLocation });
     try {
-      setIsLoading(true);
-
       const prevCount = await getEventCounter();
       LOG("createEvent: prevEventCount", prevCount);
       const result = await executeTransaction({
@@ -449,8 +448,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       LOG("createEvent: error", error);
       console.error("Failed to create event:", error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   }, [address, executeTransaction, transactionStatus]);
 
@@ -460,8 +457,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
     LOG("buyTicket: starting", { eventId: event.id, eventName: event.name });
     try {
-      setIsLoading(true);
-
       const eventIdNum = parseInt(event.id, 10);
       if (isNaN(eventIdNum)) {
         throw new Error(`Invalid event ID: "${event.id}". Expected a numeric on-chain ID.`);
@@ -491,12 +486,13 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
         LOG("buyTicket: tx confirmed", { tempId, txHash });
-        await refreshEvents();
-        // Wallet may need a few seconds to sync the new record - retry refreshTickets
-        for (let attempt = 0; attempt < 4; attempt++) {
-          const count = await refreshTickets();
+        await refreshEvents({ silent: true });
+        // Wallet may need time to sync the new record - retry refreshTickets with longer delays
+        for (let attempt = 0; attempt < 6; attempt++) {
+          const count = await refreshTickets({ silent: true });
+          LOG("buyTicket: refreshTickets attempt", { attempt, count });
           if (count > 0) break;
-          if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+          if (attempt < 5) await new Promise((r) => setTimeout(r, 4000));
         }
         LOG("buyTicket: success", { onChainTxHash: txHash ?? "pending" });
         return txHash ?? "PENDING";
@@ -507,8 +503,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       LOG("buyTicket: error", error);
       console.error("Failed to buy ticket:", error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   }, [address, executeTransaction, transactionStatus, refreshTickets, refreshEvents]);
 
@@ -518,8 +512,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
     LOG("verifyEntry: starting", { ticketId: ticket.id, eventId: ticket.eventId });
     try {
-      setIsLoading(true);
-
       const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
       LOG("verifyEntry: records fetched", { count: records?.length ?? 0 });
 
@@ -587,8 +579,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       LOG("verifyEntry: error", error);
       console.error("Failed to verify entry:", error);
       throw error;
-    } finally {
-      setIsLoading(false);
     }
   }, [address, executeTransaction, transactionStatus, requestRecords]);
 
