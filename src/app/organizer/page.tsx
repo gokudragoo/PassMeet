@@ -48,11 +48,12 @@ export default function OrganizerPage() {
         location
       );
 
-      if (txHash) {
-        console.log("[PassMeet Organizer] createEvent: success", { txHash });
-        const explorerUrl = getTransactionUrl(txHash);
+      // txHash is null only on failure; when created, we may have on-chain hash or it may still be confirming
+      if (txHash !== null) {
+        console.log("[PassMeet Organizer] createEvent: success", { txHash: txHash || "confirming" });
+        const explorerUrl = txHash ? getTransactionUrl(txHash) : null;
         toast.success(`Event created successfully!`, {
-          description: explorerUrl ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.",
+          description: explorerUrl ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction submitted. Check your wallet for confirmation.",
           ...(explorerUrl && {
             action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
           })
