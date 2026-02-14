@@ -1,6 +1,15 @@
 const PINATA_JWT = process.env.PINATA_JWT;
 const GATEWAY_URL = process.env.NEXT_PUBLIC_GATEWAY_URL || "https://gateway.pinata.cloud";
 
+/** Public IPFS gateways as fallbacks when primary times out */
+const FALLBACK_GATEWAYS = [
+  "https://ipfs.io",
+  "https://cloudflare-ipfs.com",
+  "https://dweb.link",
+];
+
+const FETCH_TIMEOUT_MS = 5000;
+
 export interface EventMetadata {
   id: string;
   name: string;
@@ -49,23 +58,37 @@ export async function uploadToIPFS(data: object, name: string): Promise<string> 
   return result.IpfsHash;
 }
 
-export async function fetchFromIPFS<T>(cid: string): Promise<T | null> {
+async function fetchWithTimeout(url: string, timeoutMs: number): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
   try {
-    const response = await fetch(`${GATEWAY_URL}/ipfs/${cid}`, {
-      headers: {
-        Accept: "application/json",
-      },
+    const res = await fetch(url, {
+      headers: { Accept: "application/json" },
+      signal: controller.signal,
     });
-
-    if (!response.ok) {
-      return null;
-    }
-
-    return await response.json();
-  } catch (error) {
-    console.error("Failed to fetch from IPFS:", error);
-    return null;
+    return res;
+  } finally {
+    clearTimeout(timeout);
   }
+}
+
+export async function fetchFromIPFS<T>(cid: string): Promise<T | null> {
+  const gateways = [GATEWAY_URL, ...FALLBACK_GATEWAYS];
+  for (const base of gateways) {
+    try {
+      const url = `${base}/ipfs/${cid}`;
+      const response = await fetchWithTimeout(url, FETCH_TIMEOUT_MS);
+      if (!response.ok) continue;
+      return await response.json();
+    } catch (error) {
+      if (base === GATEWAY_URL) {
+        console.warn("IPFS fetch failed (primary), trying fallback:", (error as Error)?.message ?? error);
+      }
+      continue;
+    }
+  }
+  console.error("Failed to fetch from IPFS (all gateways):", cid);
+  return null;
 }
 
 export async function getEventsCID(): Promise<string | null> {
@@ -151,17 +174,12 @@ export async function getAllEvents(): Promise<EventMetadata[]> {
   }
 
   const index = await fetchFromIPFS<EventsIndex>(indexCID);
-  if (!index) {
+  if (!index || !index.events?.length) {
     return [];
   }
 
-  const events: EventMetadata[] = [];
-  for (const eventCID of index.events) {
-    const event = await fetchFromIPFS<EventMetadata>(eventCID);
-    if (event) {
-      events.push(event);
-    }
-  }
-
-  return events;
+  const results = await Promise.all(
+    index.events.map((cid) => fetchFromIPFS<EventMetadata>(cid))
+  );
+  return results.filter((e): e is EventMetadata => e != null);
 }

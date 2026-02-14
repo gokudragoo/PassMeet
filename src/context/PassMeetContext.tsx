@@ -42,7 +42,7 @@ interface PassMeetContextType {
   buyTicket: (event: Event) => Promise<string | null>;
   verifyEntry: (ticket: Ticket) => Promise<string | null>;
   refreshEvents: () => Promise<void>;
-  refreshTickets: () => Promise<void>;
+  refreshTickets: () => Promise<number>;
 }
 
 const PassMeetContext = createContext<PassMeetContextType | null>(null);
@@ -212,12 +212,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         return;
       }
 
-      // 2) Fetch on-chain event data for all IDs
-      const onChainEvents: { id: number; data: NonNullable<Awaited<ReturnType<typeof getEvent>>> }[] = [];
-      for (let id = 1; id <= maxEventId; id++) {
-        const data = await getEvent(id);
-        if (data) onChainEvents.push({ id, data });
-      }
+      // 2) Fetch on-chain event data for all IDs (parallel)
+      const ids = Array.from({ length: maxEventId }, (_, i) => i + 1);
+      const results = await Promise.all(ids.map((id) => getEvent(id).then((data) => ({ id, data }))));
+      const onChainEvents = results.filter((r): r is { id: number; data: NonNullable<typeof r.data> } => r.data != null);
 
       // 3) Fetch metadata from IPFS (single batch call) + localStorage
       const ipfsMeta = await fetchAllEventMetadata();
@@ -272,8 +270,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   }, []);
 
   // ---- Refresh Tickets (from wallet records) ----
-  const refreshTickets = useCallback(async () => {
-    if (!address || !requestRecords) return;
+  const refreshTickets = useCallback(async (): Promise<number> => {
+    if (!address || !requestRecords) return 0;
 
     LOG("refreshTickets: starting...", { address: address.slice(0, 12) + "..." });
     setIsLoading(true);
@@ -287,12 +285,16 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const maxEventId = await getEventCounter();
         const eventMap: Record<string, Event> = {};
 
-        const ipfsMeta = await fetchAllEventMetadata();
+        const [ipfsMeta, ...eventResults] = await Promise.all([
+          fetchAllEventMetadata(),
+          ...Array.from({ length: maxEventId }, (_, i) => getEvent(i + 1)),
+        ]);
         const localMeta = getLocalMetadata();
 
-        for (let id = 1; id <= maxEventId; id++) {
-          const data = await getEvent(id);
+        for (let i = 0; i < eventResults.length; i++) {
+          const data = eventResults[i];
           if (!data) continue;
+          const id = i + 1;
           const idStr = String(id);
           const ipfs = ipfsMeta[idStr];
           const local = localMeta[idStr];
@@ -311,16 +313,22 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           };
         }
 
+        function extractU64(val: unknown): string | null {
+          if (val == null) return null;
+          const s = String(val);
+          const m = s.match(/(\d+)u64/);
+          return m ? m[1] : s.replace(/u64|\.private/g, "").trim() || null;
+        }
+
         for (const recordItem of records) {
           try {
             const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
-            const data = record?.data ?? record?.plaintext ?? record;
-            const rawEventId = data?.event_id?.value ?? data?.event_id;
-            const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id;
-            if (!rawEventId || !rawTicketId) continue;
-
-            const eventIdRaw = String(rawEventId).replace("u64", "").replace(".private", "").trim();
-            const ticketIdRaw = String(rawTicketId).replace("u64", "").replace(".private", "").trim();
+            const data = record?.data ?? record?.plaintext ?? record ?? recordItem;
+            const rawEventId = data?.event_id?.value ?? data?.event_id ?? data?.eventId;
+            const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id ?? data?.ticketId;
+            const eventIdRaw = extractU64(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
+            const ticketIdRaw = extractU64(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
+            if (!eventIdRaw || !ticketIdRaw) continue;
 
             const event = eventMap[eventIdRaw];
 
@@ -344,10 +352,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
       LOG("refreshTickets: done", { count: tickets.length });
       setMyTickets(tickets);
+      return tickets.length;
     } catch (error) {
       LOG("refreshTickets: error", error);
       console.error("Failed to refresh tickets:", error);
       setMyTickets([]);
+      return 0;
     } finally {
       setIsLoading(false);
     }
@@ -479,7 +489,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
         LOG("buyTicket: tx confirmed", { tempId, txHash });
         await refreshEvents();
-        await refreshTickets();
+        // Wallet may need a few seconds to sync the new record - retry refreshTickets
+        for (let attempt = 0; attempt < 4; attempt++) {
+          const count = await refreshTickets();
+          if (count > 0) break;
+          if (attempt < 3) await new Promise((r) => setTimeout(r, 2500));
+        }
         LOG("buyTicket: success", { onChainTxHash: txHash ?? "pending" });
         return txHash ?? "PENDING";
       }
@@ -513,15 +528,22 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const targetEventId = ticket.eventId;
       const targetTicketId = ticket.ticketId;
 
+      function extractU64Verify(val: unknown): string | null {
+        if (val == null) return null;
+        const s = String(val);
+        const m = s.match(/(\d+)u64/);
+        return m ? m[1] : s.replace(/u64|\.private/g, "").trim() || null;
+      }
+
       for (const recordItem of records) {
         try {
           const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
           const data = record?.data ?? record?.plaintext ?? record;
           const rawEventId = data?.event_id?.value ?? data?.event_id;
           const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id;
-          if (!rawEventId || !rawTicketId) continue;
-          const recordEventId = String(rawEventId).replace("u64", "").replace(".private", "").trim();
-          const recordTicketId = String(rawTicketId).replace("u64", "").replace(".private", "").trim();
+          const recordEventId = extractU64Verify(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
+          const recordTicketId = extractU64Verify(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
+          if (!recordEventId || !recordTicketId) continue;
 
           if (recordEventId === targetEventId && recordTicketId === targetTicketId) {
             recordToUse = typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem);
