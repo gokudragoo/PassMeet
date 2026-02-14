@@ -36,13 +36,14 @@ interface PassMeetContextType {
   events: Event[];
   myTickets: Ticket[];
   isLoading: boolean;
+  isDataLoading: boolean;
   isAuthenticated: boolean;
   authenticateWithSignature: () => Promise<boolean>;
   createEvent: (name: string, capacity: number, price: number, eventDate: string, eventLocation: string) => Promise<string | null>;
   buyTicket: (event: Event) => Promise<string | null>;
   verifyEntry: (ticket: Ticket) => Promise<string | null>;
-  refreshEvents: () => Promise<void>;
-  refreshTickets: () => Promise<number>;
+  refreshEvents: (opts?: { silent?: boolean }) => Promise<void>;
+  refreshTickets: (opts?: { silent?: boolean }) => Promise<number>;
 }
 
 const PassMeetContext = createContext<PassMeetContextType | null>(null);
@@ -154,6 +155,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const [events, setEvents] = useState<Event[]>([]);
   const [myTickets, setMyTickets] = useState<Ticket[]>([]);
   const [isLoading, setIsLoading] = useState(false);
+  const [isDataLoading, setIsDataLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
 
   // ---- Authentication ----
@@ -200,9 +202,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   }, [address, signMessage]);
 
   // ---- Refresh Events (on-chain + metadata) ----
-  const refreshEvents = useCallback(async () => {
-    LOG("refreshEvents: starting...");
-    setIsLoading(true);
+  const refreshEvents = useCallback(async (opts?: { silent?: boolean }) => {
+    const silent = opts?.silent ?? false;
+    LOG("refreshEvents: starting...", { silent });
+    if (!silent) setIsDataLoading(true);
     try {
       // 1) Get the number of events on-chain
       const maxEventId = await getEventCounter();
@@ -265,7 +268,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to refresh events:", error);
       setEvents([]);
     } finally {
-      setIsLoading(false);
+      if (!silent) setIsDataLoading(false);
     }
   }, []);
 
