@@ -8,7 +8,7 @@
 
 **The world's first privacy-first event ticketing platform powered by Zero-Knowledge proofs.**
 
-[Live Demo](https://passmeet.vercel.app/) | [Demo Video](https://youtu.be/lnh7xxyln7w) | [Explorer](https://explorer.provable.com/testnet/program/passmeet_v1_7788.aleo)
+[Live Demo](https://passmeet-chi.vercel.app/) | [Demo Video](https://youtu.be/lnh7xxyln7w) | [Explorer](https://explorer.provable.com/testnet/program/passmeet_v1_7788.aleo)
 
 </div>
 
@@ -50,7 +50,7 @@ PassMeet solves this by making tickets **private by default**, entry verificatio
 
 | Requirement | Status |
 |-------------|--------|
-| **Deployed on Aleo Testnet** | ✅ Live at [passmeet.vercel.app](https://passmeet.vercel.app/) — [Watch Demo](https://youtu.be/lnh7xxyln7w) |
+| **Deployed on Aleo Testnet** | ✅ Live at [passmeet-chi.vercel.app](https://passmeet-chi.vercel.app/) — [Watch Demo](https://youtu.be/lnh7xxyln7w) |
 | **Functional Leo Smart Contracts** | ✅ `passmeet_v1_7788.aleo` (events, tickets, verify_entry) + `passmeet_subs_7788.aleo` (subscriptions) |
 | **Basic UI Demonstrating Core Features** | ✅ Landing, Organizer, My Tickets, Gate, Subscription — full flow works |
 

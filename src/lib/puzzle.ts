@@ -14,7 +14,7 @@ export const CONNECT_CONFIG = {
   dAppInfo: {
     name: "PassMeet",
     description: "Private Event Access & Ticket Verification on Aleo",
-    iconUrl: "https://passmeet.vercel.app/logo.png",
+    iconUrl: "https://passmeet-chi.vercel.app/logo.png",
   },
   permissions: {
     programIds: {
