@@ -60,6 +60,9 @@ interface PassMeetProviderProps {
 }
 
 const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800";
+const LOG = (msg: string, data?: unknown) => {
+  console.log(`[PassMeet] ${msg}`, data ?? "");
+};
 
 // ---------------------
 // Metadata helpers
@@ -186,10 +189,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
   // ---- Refresh Events (on-chain + metadata) ----
   const refreshEvents = useCallback(async () => {
+    LOG("refreshEvents: starting...");
     setIsLoading(true);
     try {
       // 1) Get the number of events on-chain
       const maxEventId = await getEventCounter();
+      LOG("refreshEvents: eventCounter", { maxEventId });
       if (maxEventId === 0) {
         setEvents([]);
         return;
@@ -243,8 +248,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         })
         .filter((e): e is Event => e != null);
 
+      LOG("refreshEvents: done", { count: merged.length, eventIds: merged.map((e) => e.id) });
       setEvents(merged);
     } catch (error) {
+      LOG("refreshEvents: error", error);
       console.error("Failed to refresh events:", error);
       setEvents([]);
     } finally {
@@ -256,9 +263,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const refreshTickets = useCallback(async () => {
     if (!address || !requestRecords) return;
 
+    LOG("refreshTickets: starting...", { address: address.slice(0, 12) + "..." });
     setIsLoading(true);
     try {
       const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+      LOG("refreshTickets: records fetched", { count: records?.length ?? 0 });
       const tickets: Ticket[] = [];
 
       if (records && records.length > 0) {
@@ -321,8 +330,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         }
       }
 
+      LOG("refreshTickets: done", { count: tickets.length });
       setMyTickets(tickets);
     } catch (error) {
+      LOG("refreshTickets: error", error);
       console.error("Failed to refresh tickets:", error);
       setMyTickets([]);
     } finally {
@@ -340,10 +351,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   ): Promise<string | null> => {
     if (!address || !executeTransaction) return null;
 
+    LOG("createEvent: starting", { name, capacity, price, eventDate, eventLocation });
     try {
       setIsLoading(true);
 
       const prevCount = await getEventCounter();
+      LOG("createEvent: prevEventCount", prevCount);
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "create_event",
@@ -352,8 +365,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       });
 
       const tempId = result?.transactionId;
+      LOG("createEvent: tx submitted", { tempId });
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
+        LOG("createEvent: tx confirmed", { tempId, txHash });
         // Try to discover the new on-chain event ID by polling
         let newOnChainId: number;
         try {
@@ -399,10 +414,13 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         };
 
         setEvents((prev) => [...prev, newEvent]);
+        LOG("createEvent: success", { eventId: idStr, txHash: txHash ?? tempId });
         return txHash ?? tempId;
       }
+      LOG("createEvent: no txId returned");
       return null;
     } catch (error) {
+      LOG("createEvent: error", error);
       console.error("Failed to create event:", error);
       throw error;
     } finally {
@@ -414,6 +432,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const buyTicket = useCallback(async (event: Event): Promise<string | null> => {
     if (!address || !executeTransaction) return null;
 
+    LOG("buyTicket: starting", { eventId: event.id, eventName: event.name });
     try {
       setIsLoading(true);
 
@@ -432,6 +451,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
 
       const nextTicketId = onChainEvent.ticket_count + 1;
+      LOG("buyTicket: minting", { eventIdNum, nextTicketId });
 
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
@@ -441,14 +461,19 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       });
 
       const tempId = result?.transactionId;
+      LOG("buyTicket: tx submitted", { tempId });
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
+        LOG("buyTicket: tx confirmed", { tempId, txHash });
         await refreshEvents();
         await refreshTickets();
+        LOG("buyTicket: success", { txHash: txHash ?? tempId });
         return txHash ?? tempId;
       }
+      LOG("buyTicket: no txId returned");
       return null;
     } catch (error) {
+      LOG("buyTicket: error", error);
       console.error("Failed to buy ticket:", error);
       throw error;
     } finally {
@@ -460,10 +485,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const verifyEntry = useCallback(async (ticket: Ticket): Promise<string | null> => {
     if (!address || !executeTransaction || !requestRecords) return null;
 
+    LOG("verifyEntry: starting", { ticketId: ticket.id, eventId: ticket.eventId });
     try {
       setIsLoading(true);
 
       const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+      LOG("verifyEntry: records fetched", { count: records?.length ?? 0 });
 
       if (!records || records.length === 0) {
         throw new Error("No ticket records found in wallet. Please ensure you have minted a ticket.");
@@ -504,17 +531,22 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       });
 
       const tempId = result?.transactionId;
+      LOG("verifyEntry: tx submitted", { tempId });
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
+        LOG("verifyEntry: tx confirmed", { tempId, txHash });
         setMyTickets((prev) =>
           prev.map((t) =>
             t.id === ticket.id ? { ...t, status: "Used" as const } : t
           )
         );
+        LOG("verifyEntry: success", { txHash: txHash ?? tempId });
         return txHash ?? tempId;
       }
+      LOG("verifyEntry: no txId returned");
       return null;
     } catch (error) {
+      LOG("verifyEntry: error", error);
       console.error("Failed to verify entry:", error);
       throw error;
     } finally {

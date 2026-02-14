@@ -1,11 +1,18 @@
 import { NextResponse } from "next/server";
 import { saveEventMetadata, getAllEvents, EventMetadata } from "@/lib/pinata";
 
+const LOG = (msg: string, data?: unknown) => {
+  console.log(`[PassMeet API] ${msg}`, data ?? "");
+};
+
 export async function GET() {
   try {
+    LOG("GET /api/events: fetching...");
     const events = await getAllEvents();
+    LOG("GET /api/events: done", { count: events?.length ?? 0 });
     return NextResponse.json({ events });
   } catch (error) {
+    LOG("GET /api/events: error", error);
     console.error("Failed to fetch events:", error);
     return NextResponse.json({ events: [], error: "Failed to fetch events" }, { status: 500 });
   }
@@ -14,6 +21,7 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    LOG("POST /api/events: saving metadata", { id: body.id, name: body.name });
 
     const eventId = body.id != null ? String(body.id) : `event_${Date.now()}`;
 
@@ -31,6 +39,7 @@ export async function POST(request: Request) {
     };
 
     const cid = await saveEventMetadata(event);
+    LOG("POST /api/events: IPFS saved", { eventId, cid: cid ?? "null" });
 
     return NextResponse.json({
       success: true,
@@ -39,6 +48,7 @@ export async function POST(request: Request) {
       ipfsSaved: cid != null,
     });
   } catch (error) {
+    LOG("POST /api/events: error", error);
     console.error("Failed to create event:", error);
     return NextResponse.json({ 
       success: false, 

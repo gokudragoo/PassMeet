@@ -25,6 +25,7 @@ export default function OrganizerPage() {
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
+    console.log("[PassMeet Organizer] handleCreateEvent: submit", { eventName, capacity, price, eventDate, location });
     if (!address) {
       toast.error("Please connect your wallet first");
       return;
@@ -48,6 +49,7 @@ export default function OrganizerPage() {
       );
 
       if (txHash) {
+        console.log("[PassMeet Organizer] createEvent: success", { txHash });
         toast.success(`Event created successfully!`, {
           description: `Transaction: ${txHash.slice(0, 16)}...`,
           action: {
@@ -62,6 +64,7 @@ export default function OrganizerPage() {
         setLocation("");
       }
     } catch (error) {
+      console.log("[PassMeet Organizer] createEvent: error", error);
       console.error(error);
       let errorMessage = error instanceof Error ? error.message : "Failed to create event";
       // Leo Wallet: "Could not create authorization" usually means insufficient UTXOs

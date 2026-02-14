@@ -32,6 +32,7 @@ export default function TicketsPage() {
   const [activeTab, setActiveTab] = useState("available");
 
   const handleBuyTicket = async (eventId: string) => {
+    console.log("[PassMeet Tickets] handleBuyTicket: start", { eventId });
     if (!address) {
       toast.error("Please connect your wallet first");
       return;
@@ -56,6 +57,7 @@ export default function TicketsPage() {
       const txId = await buyTicket(event);
 
       if (txId) {
+        console.log("[PassMeet Tickets] buyTicket: success", { txId });
         toast.success("Ticket minted successfully!", {
           description: `Transaction: ${txId.slice(0, 16)}...`,
           action: {
@@ -66,6 +68,7 @@ export default function TicketsPage() {
         setActiveTab("tickets");
       }
     } catch (error) {
+      console.log("[PassMeet Tickets] buyTicket: error", error);
       console.error(error);
       let errorMessage = error instanceof Error ? error.message : "Transaction failed";
       if (errorMessage.toLowerCase().includes("authorization")) {
@@ -79,6 +82,7 @@ export default function TicketsPage() {
   };
 
   const handleGenerateProof = async (ticket: Ticket) => {
+    console.log("[PassMeet Tickets] handleGenerateProof: start", { ticketId: ticket.id });
     setLoading(`proof-${ticket.id}`);
     try {
       toast.info("Generating Zero-Knowledge Entry Proof...", {
@@ -88,11 +92,13 @@ export default function TicketsPage() {
       const txId = await verifyEntry(ticket);
 
       if (txId) {
+        console.log("[PassMeet Tickets] verifyEntry: success", { txId });
         toast.success("Entry verified! Access granted.", {
           description: "ZK proof accepted - your wallet address was never revealed"
         });
       }
     } catch (error) {
+      console.log("[PassMeet Tickets] verifyEntry: error", error);
       console.error(error);
       let errorMessage = error instanceof Error ? error.message : "Failed to generate proof";
       if (errorMessage.toLowerCase().includes("authorization")) {
