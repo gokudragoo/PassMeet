@@ -1,0 +1,172 @@
+# PassMeet - Production Readiness Audit & Implementation Plan
+
+## Audit Summary
+
+Both contracts are **deployed and live** on Aleo testnet:
+- `passmeet_v1_7788.aleo` — 3 transitions: `create_event`, `mint_ticket`, `verify_entry`
+- `passmeet_subs_7788.aleo` — 1 transition: `subscribe`
+
+**On-chain state:** 1 event exists (capacity: 2, price: 100000 microcredits, 0 tickets minted).
+
+> [!IMPORTANT]
+> The judge reported: **"creating an event works, but I was unable to mint a ticket."** This is a real bug caused by mismatched event IDs between the frontend and on-chain contract. See Issue #1 below.
+
+---
+
+## Issues Found (7 Total)
+
+### 🔴 CRITICAL — Blocks Core Functionality
+
+#### Issue #1: `buyTicket` sends wrong `event_id` to the contract
+
+The contract's `mint_ticket` expects the **on-chain event ID** (auto-incremented `u64` from the `event_counter` mapping). But the frontend sends a string like `"demo_1"` → `"1"` or `"event_1739000000000"` → `"1739000000000"` — neither of which maps to a real on-chain event.
+
+**Root cause** in [PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx#L238):
+```typescript
+// This extracts "1" from "demo_1" or a giant timestamp from "event_1739000000000"
+const eventId = event.id.startsWith('demo') ? '1' : event.id.replace('event_', '');
+```
+
+For demo events, it sends `1u64` which happens to match the on-chain event (event #1). But `ticket_id` is also wrong — it uses `event.ticketCount + 1` from localStorage, not the on-chain `ticket_count`. The contract **asserts** `ticket_id == event.ticket_count + 1`, so this fails if the two are out of sync.
+
+For user-created events, the ID is a Unix timestamp like `1739000000000u64`, which doesn't exist on-chain, so the contract's `Mapping::get(events, event_id)` panics.
+
+---
+
+#### Issue #2: Events are loaded from localStorage, not from the blockchain
+
+[PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx#L141-L153) `refreshEvents` reads from `localStorage` and merges with hardcoded `DEMO_EVENTS`. It **never** queries the on-chain `events` mapping. This means:
+- Events created by other users are invisible
+- Event data (ticket_count, capacity) is never synced from chain
+- The app shows stale data
+
+---
+
+#### Issue #3: Hardcoded `DEMO_EVENTS` pollute the event list
+
+[PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx#L64-L91) has 2 fake demo events with dummy organizer addresses (`"aleo1...zk42"`, `"demo"`). These are **not on-chain** and trying to buy tickets for them will fail because the contract can't find them.
+
+---
+
+### 🟡 MAJOR — Features Completely Fake
+
+#### Issue #4: Subscription page is 100% faked
+
+[subscription/page.tsx](file:///c:/Users/BMSIT/PassMeet/src/app/subscription/page.tsx#L98-L129) uses `setTimeout(2500ms)` and [generateTxHash()](file:///c:/Users/BMSIT/PassMeet/src/app/subscription/page.tsx#23-31) (a random string generator) instead of calling the deployed `passmeet_subs_7788.aleo` contract. The "transaction" link points to a fake hash that doesn't exist on-chain.
+
+---
+
+#### Issue #5: `createEvent` doesn't track the on-chain event ID
+
+When `createEvent` succeeds, it stores the event in localStorage with `id: event_${Date.now()}` — a frontend-generated timestamp. It never captures or stores the **actual on-chain event ID** (the auto-incremented counter from the contract). This makes the event unfindable on-chain later.
+
+---
+
+### 🟠 MODERATE — Data Integrity Issues
+
+#### Issue #6: IPFS/Pinata API route exists but is unused
+
+[api/events/route.ts](file:///c:/Users/BMSIT/PassMeet/src/app/api/events/route.ts) has working Pinata upload/fetch logic, but [PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx) **never calls it**. Also, [.env.local](file:///c:/Users/BMSIT/PassMeet/.env.local) has empty Pinata JWT and gateway URL values, so even if called it would fail.
+
+#### Issue #7: Tickets stored only in localStorage
+
+Minted tickets are only stored in `localStorage` with no on-chain syncing. If the user clears their browser data or uses a different browser, all ticket records are lost. The app should use `requestRecords` to fetch actual on-chain Ticket records owned by the wallet.
+
+---
+
+## Proposed Changes
+
+### Component 1: Core Context — Fix On-Chain Integration
+
+#### [MODIFY] [PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx)
+
+1. **Remove `DEMO_EVENTS`** — Delete the hardcoded demo events array entirely
+2. **Fix `refreshEvents`** — Query the on-chain `events` mapping via the Aleo RPC API (`/mapping/events/{id}`, iterated from 1 to `event_counter`) instead of reading from localStorage
+3. **Fix `createEvent`** — After successful transaction, poll the on-chain `event_counter` to get the actual event ID. Store IPFS metadata (name, date, location) via the API route
+4. **Fix `buyTicket`** — Use the on-chain `event.id` (u64) directly when calling `mint_ticket`. Fetch the current `ticket_count` from on-chain before computing `ticket_id`
+5. **Fix `refreshTickets`** — Use `requestRecords` from the wallet adapter to fetch actual on-chain Ticket records, instead of reading from localStorage
+
+---
+
+### Component 2: Subscription — Wire to Real Contract
+
+#### [MODIFY] [page.tsx](file:///c:/Users/BMSIT/PassMeet/src/app/subscription/page.tsx)
+
+1. **Remove [generateTxHash()](file:///c:/Users/BMSIT/PassMeet/src/app/subscription/page.tsx#23-31)** function
+2. **Remove `setTimeout` fake delay**
+3. **Wire [handleSubscribe](file:///c:/Users/BMSIT/PassMeet/src/app/subscription/page.tsx#88-130)** to create an actual `Transaction.createTransaction` call to `passmeet_subs_7788.aleo`'s `subscribe` transition with `tier` and `duration` params
+4. **Show real tx hash** from the wallet response
+
+---
+
+### Component 3: Data Layer — IPFS for Event Metadata
+
+Since the Leo contract only stores `capacity`, `price`, `organizer`, and `ticket_count` (not name, date, location, image), we need an off-chain metadata layer. The existing Pinata/IPFS code is perfect for this.
+
+#### [MODIFY] [PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx)
+
+- After `createEvent` succeeds, call the `/api/events` POST endpoint to store metadata (name, date, location, image) on IPFS, keyed by the on-chain event ID
+- In `refreshEvents`, fetch on-chain event data AND IPFS metadata, merge them into the [Event](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx#11-24) interface
+
+> [!WARNING]
+> The [.env.local](file:///c:/Users/BMSIT/PassMeet/.env.local) currently has **empty** `PINATA_JWT` and `NEXT_PUBLIC_GATEWAY_URL` values. You'll need to add your Pinata API key for IPFS to work. Without it, metadata storage will fail and events will only show on-chain data (capacity, price) without names/dates/locations.
+
+#### Alternative approach (simpler, no IPFS dependency):
+
+If Pinata is not configured, we can use the on-chain data only and use localStorage as a supplementary cache for metadata. The app would show "Event #1", "Event #2" etc. for events created by others, but the core functionality (minting/verifying) would still work.
+
+---
+
+### Component 4: Minor Fixes
+
+#### [MODIFY] [AleoWalletProvider.tsx](file:///c:/Users/BMSIT/PassMeet/src/components/AleoWalletProvider.tsx)
+
+- The `PuzzleWalletAdapter` has `programIdPermissions` using `WalletAdapterNetwork.TestnetBeta` which may not exist. Clean this up to use only `Testnet`.
+
+---
+
+## Verification Plan
+
+### Automated Tests
+There are no existing tests in this project. Since this is a blockchain dApp, verification must be done through browser testing.
+
+### Browser-Based Verification (Manual)
+
+**Prerequisites:**
+- Install Leo Wallet or Puzzle Wallet browser extension
+- Have a testnet wallet with some test Aleo credits
+- Run `npm run dev` in the project root
+
+**Test 1: Create Event**
+1. Navigate to `http://localhost:3000/organizer`
+2. Connect wallet via the navbar
+3. Click "Sign to Verify" if prompted
+4. Fill in event form: Name="Test Event", Location="Remote", Date=tomorrow, Capacity=10, Price=0.1
+5. Click "Deploy Event On-Chain"
+6. Confirm the wallet transaction popup
+7. **Expected:** Toast shows success with a real transaction hash. Event appears in "My Events" list. Transaction is viewable on `explorer.provable.com`.
+
+**Test 2: Mint Ticket (THE JUDGE BUG)**
+1. Navigate to `http://localhost:3000/tickets`
+2. Connect wallet (use a different wallet address than the organizer, OR use the same — both should work)
+3. Find the event created in Test 1 in "Available Events"
+4. Click "Mint Private Ticket"
+5. Confirm the wallet transaction popup
+6. **Expected:** Toast shows success with a real transaction hash. Ticket appears in "My Tickets" tab.
+
+**Test 3: Verify Entry**
+1. Navigate to `http://localhost:3000/gate`
+2. Connect wallet
+3. Click "Start Verification"
+4. Select the minted ticket
+5. **Expected:** Verification succeeds, showing "ACCESS GRANTED" with a real transaction hash
+
+**Test 4: Subscription**
+1. Navigate to `http://localhost:3000/subscription`
+2. Connect wallet
+3. Click "Upgrade to Pro"
+4. Confirm the wallet transaction popup
+5. **Expected:** Toast shows success with a real transaction hash pointing to `passmeet_subs_7788.aleo`
+
+> [!IMPORTANT]
+> All 4 tests must show **real** transaction hashes verifiable on the Aleo explorer. No fake/random hashes should appear anywhere.
