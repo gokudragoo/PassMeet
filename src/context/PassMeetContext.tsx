@@ -284,6 +284,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     try {
       const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
       LOG("refreshTickets: records fetched", { count: records?.length ?? 0 });
+      console.log("[PassMeet] refreshTickets: records count", records?.length ?? 0);
       if (records?.length > 0) {
         LOG("refreshTickets: raw record sample", JSON.stringify(records[0]).slice(0, 500));
       }
