@@ -426,9 +426,9 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         };
 
         setEvents((prev) => [...prev, newEvent]);
-        // Return on-chain hash (at1...) for explorer; null means created but hash not yet available
+        // Return on-chain hash (at1...) for explorer; "PENDING" when created but hash not yet available
         LOG("createEvent: success", { eventId: idStr, onChainTxHash: txHash ?? "pending" });
-        return txHash; // null when poll didn't get on-chain hash yet - event still created
+        return txHash ?? "PENDING";
       }
       LOG("createEvent: no tempId from wallet");
       return null;
