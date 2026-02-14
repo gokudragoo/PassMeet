@@ -303,7 +303,20 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     LOG("refreshTickets: starting...", { address: address.slice(0, 12) + "...", silent });
     if (!silent) setIsDataLoading(true);
     try {
-      const records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+      let records: unknown[] | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        try {
+          if (attempt > 0) {
+            await new Promise((r) => setTimeout(r, 2000 + attempt * 1000));
+            LOG("refreshTickets: retry", { attempt: attempt + 1 });
+          }
+          records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+          if (records && records.length > 0) break;
+        } catch (e) {
+          LOG("refreshTickets: requestRecords failed", { attempt: attempt + 1, message: (e as Error)?.message });
+          if (attempt === 2) throw e;
+        }
+      }
       LOG("refreshTickets: records fetched", { count: records?.length ?? 0 });
       console.log("[PassMeet] refreshTickets: records count", records?.length ?? 0);
       if (records?.length > 0) {
@@ -642,33 +655,32 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
       if (!recordToUse && requestRecords) {
         let records: unknown[] | null = null;
-        try {
-          records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
-          LOG("verifyEntry: records fetched", { count: records?.length ?? 0 });
-        } catch (reqErr) {
-          const msg = (reqErr as Error)?.message ?? "";
-          throw new Error(
-            msg.toLowerCase().includes("request") && msg.toLowerCase().includes("record")
-              ? "Wallet could not provide records. Ensure you approved the request and your wallet is on the correct network. Try refreshing your tickets first."
-              : msg || "Failed to request records from wallet."
-          );
-        }
-
-        if ((!records || records.length === 0)) {
-          await new Promise((r) => setTimeout(r, 3000));
+        const maxAttempts = 3;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
           try {
+            if (attempt > 0) {
+              await new Promise((r) => setTimeout(r, 2000 + attempt * 1000));
+              LOG("verifyEntry: retry requestRecords", { attempt: attempt + 1 });
+            }
             records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
-            LOG("verifyEntry: retry records fetched", { count: records?.length ?? 0 });
-          } catch {
-            throw new Error(
-              "Wallet has not synced your ticket yet. Please wait a minute, refresh your tickets, and try again."
-            );
+            LOG("verifyEntry: records fetched", { attempt: attempt + 1, count: records?.length ?? 0 });
+            if (records && records.length > 0) break;
+          } catch (reqErr) {
+            const msg = (reqErr as Error)?.message ?? "";
+            LOG("verifyEntry: requestRecords failed", { attempt: attempt + 1, message: msg });
+            if (attempt === maxAttempts - 1) {
+              throw new Error(
+                msg.toLowerCase().includes("request") && msg.toLowerCase().includes("record")
+                  ? "Wallet could not provide records. Try: 1) Disconnect and reconnect your wallet, 2) Ensure Leo/Puzzle wallet is on Testnet, 3) Refresh tickets and try again."
+                  : msg || "Failed to request records from wallet."
+              );
+            }
           }
         }
 
         if (!records || records.length === 0) {
           throw new Error(
-            "Wallet has not synced your ticket yet. Please wait a minute and try again."
+            "Wallet has not synced your ticket yet. Please wait a minute, refresh your tickets, and try again."
           );
         }
 

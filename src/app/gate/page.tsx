@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { Button } from "@/components/ui/button";
@@ -38,6 +38,13 @@ export default function GatePage() {
   const [lastError, setLastError] = useState<string | null>(null);
 
   const NETWORK_LABEL = ALEO_NETWORK === "mainnet" ? "Aleo Mainnet" : "Aleo Testnet";
+
+  // Refresh tickets when entering gate with wallet connected - ensures recordString is populated
+  useEffect(() => {
+    if (address && myTickets.length > 0) {
+      refreshTickets({ silent: true }).catch(() => {});
+    }
+  }, [address, refreshTickets]);
 
   const handleStartScan = () => {
     if (!address) {
