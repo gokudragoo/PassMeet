@@ -105,6 +105,7 @@ export default function SubscriptionPage() {
       name: "Free",
       id: 0,
       price: "0",
+      priceLabel: "Aleo / mo",
       description: "For casual attendees",
       icon: Star,
       features: [
@@ -119,7 +120,8 @@ export default function SubscriptionPage() {
     {
       name: "Organizer Pro",
       id: 1,
-      price: "15",
+      price: "0.1",
+      priceLabel: "Aleo (tx fee)",
       description: "Perfect for event creators",
       icon: Zap,
       features: [
@@ -135,7 +137,8 @@ export default function SubscriptionPage() {
     {
       name: "Enterprise",
       id: 2,
-      price: "50",
+      price: "0.1",
+      priceLabel: "Aleo (tx fee)",
       description: "For large-scale conferences",
       icon: Crown,
       features: [
@@ -256,7 +259,7 @@ export default function SubscriptionPage() {
 
             <div className="mb-8">
               <span className="text-5xl font-bold text-white">{tier.price}</span>
-              <span className="ml-2 text-muted-foreground">Aleo / mo</span>
+              <span className="ml-2 text-muted-foreground">{tier.priceLabel ?? "Aleo / mo"}</span>
             </div>
 
             <div className="mb-8 space-y-4 flex-1">
