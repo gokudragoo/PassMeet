@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
+import { EXPLORER_BASE } from "@/lib/aleo";
 import { 
   Ticket, 
   ShieldCheck, 
@@ -73,13 +74,19 @@ export default function Home() {
             variants={containerVariants}
             className="flex flex-col items-center text-center"
           >
-            <motion.div variants={itemVariants} className="mb-6 flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary">
+            <motion.a
+              href={EXPLORER_BASE}
+              target="_blank"
+              rel="noopener noreferrer"
+              variants={itemVariants}
+              className="mb-6 inline-flex items-center gap-2 rounded-full border border-primary/20 bg-primary/10 px-4 py-1.5 text-sm font-medium text-primary hover:bg-primary/20 transition-colors"
+            >
               <span className="relative flex h-2 w-2">
                 <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-primary opacity-75"></span>
                 <span className="relative inline-flex h-2 w-2 rounded-full bg-primary"></span>
               </span>
               Built on Aleo Testnet
-            </motion.div>
+            </motion.a>
             
             <motion.h1 variants={itemVariants} className="max-w-4xl bg-gradient-to-b from-white to-white/60 bg-clip-text text-5xl font-extrabold tracking-tight text-transparent md:text-7xl lg:text-8xl">
               Private Event Access <br />

@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { Ticket } from "lucide-react";
+import { EXPLORER_BASE } from "@/lib/aleo";
 
 export function Footer() {
   return (
@@ -17,6 +18,7 @@ export function Footer() {
             <Link href="/organizer" className="hover:text-primary transition-colors">Organizer</Link>
             <Link href="/tickets" className="hover:text-primary transition-colors">My Tickets</Link>
             <Link href="/gate" className="hover:text-primary transition-colors">Gate</Link>
+            <a href={EXPLORER_BASE} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">View on Explorer</a>
           </div>
           <p className="text-xs text-muted-foreground">
             © 2026 PassMeet. Built for Aleo Wavehack.
