@@ -9,7 +9,8 @@ export const PROGRAM_IDS = [
   PASSMEET_SUBS_PROGRAM_ID,
 ];
 
-export const EXPLORER_BASE = "https://explorer.provable.com/testnet";
+/** Provable Explorer - use to verify transactions and programs on-chain */
+export const EXPLORER_BASE = "https://testnet.explorer.provable.com";
 
 export function getTransactionUrl(txHash: string): string {
   return `${EXPLORER_BASE}/transaction/${txHash}`;
