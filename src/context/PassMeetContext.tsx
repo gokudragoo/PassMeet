@@ -123,19 +123,27 @@ function saveLocalMetadata(id: string, meta: { name: string; date: string; locat
 // Provider
 // ---------------------
 
-/** Poll for final transaction ID from Provable wallet (returns on-chain tx hash when ready) */
+/** Aleo on-chain tx IDs: at1... 61+ chars. Temp UUIDs from wallet are invalid for explorer. */
+function isOnChainTxHash(id: string): boolean {
+  return typeof id === "string" && id.startsWith("at1") && id.length >= 61;
+}
+
+/** Poll for final ON-CHAIN transaction ID (at1...). Never returns temp UUID - only valid explorer IDs. */
 async function pollForTxHash(
   tempId: string,
   transactionStatus: (id: string) => Promise<{ status: string; transactionId?: string; error?: string }>,
-  maxAttempts = 30
+  maxAttempts = 45
 ): Promise<string | null> {
   for (let i = 0; i < maxAttempts; i++) {
     await new Promise((r) => setTimeout(r, 2000));
     const res = await transactionStatus(tempId);
-    if (res.transactionId) return res.transactionId;
+    // Only return if we have the real on-chain hash (at1...), not temp UUID
+    if (res.transactionId && isOnChainTxHash(res.transactionId)) {
+      return res.transactionId;
+    }
     const status = res.status?.toLowerCase();
-    if (status === "accepted" || status === "rejected" || status === "failed") {
-      return res.transactionId ?? null;
+    if (status === "rejected" || status === "failed") {
+      return null;
     }
   }
   return null;
