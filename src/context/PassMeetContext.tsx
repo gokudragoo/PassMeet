@@ -135,7 +135,7 @@ async function pollForTxHash(
   maxAttempts = 45
 ): Promise<string | null> {
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
+    await new Promise((r) => setTimeout(r, 1500));
     const res = await transactionStatus(tempId);
     // Only return if we have the real on-chain hash (at1...), not temp UUID
     if (res.transactionId && isOnChainTxHash(res.transactionId)) {

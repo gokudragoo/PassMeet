@@ -5,10 +5,19 @@ const LOG = (msg: string, data?: unknown) => {
   console.log(`[PassMeet API] ${msg}`, data ?? "");
 };
 
+let eventsCache: { events: EventMetadata[]; ts: number } | null = null;
+const CACHE_TTL_MS = 15_000; // 15 seconds
+
 export async function GET() {
   try {
+    const now = Date.now();
+    if (eventsCache && now - eventsCache.ts < CACHE_TTL_MS) {
+      LOG("GET /api/events: cache hit", { count: eventsCache.events.length });
+      return NextResponse.json({ events: eventsCache.events });
+    }
     LOG("GET /api/events: fetching...");
     const events = await getAllEvents();
+    eventsCache = { events, ts: Date.now() };
     LOG("GET /api/events: done", { count: events?.length ?? 0 });
     return NextResponse.json({ events });
   } catch (error) {
@@ -40,6 +49,7 @@ export async function POST(request: Request) {
 
     const cid = await saveEventMetadata(event);
     LOG("POST /api/events: IPFS saved", { eventId, cid: cid ?? "null" });
+    eventsCache = null; // invalidate cache so new event appears
 
     return NextResponse.json({
       success: true,
