@@ -40,8 +40,21 @@ PassMeet is a fully on-chain, privacy-preserving event ticketing and access cont
 | **IPFS Storage** | Event metadata stored on Pinata IPFS for decentralized data availability |
 
 
-## Update in wave 2 
+## Update in Wave 2
 
+Production-ready polish and fixes applied:
+
+| Area | Improvements |
+|------|--------------|
+| **Minting** | Ticket minting flow refined; records handled correctly with Leo/Puzzle wallets |
+| **Organizer** | Event creation and dashboard organization improved; IPFS metadata caching (60s) for faster loads |
+| **Tickets** | Tickets persist per wallet in `localStorage`; survive refresh; isolated per address |
+| **Gate Verification** | ZK-proof generation fixed; record format (ciphertext/plaintext) handled; `verify_entry` succeeds |
+| **Wallet** | Decrypt permission set to `OnChainHistory` for record access; retries (3x) on `requestRecords`; clear NOT_GRANTED messaging |
+| **Subscription** | UI price aligned with actual charge (0.1 ALEO tx fee); no misleading 15/50 ALEO display |
+| **Network** | RPC/Explorer paths use `ALEO_NETWORK` (testnet/mainnet); testnet banner warns users |
+| **UX** | Gate page: dynamic network label, error UX with "Refresh Tickets & Try Again"; auto-refresh on load |
+| **Production** | Favicon & Apple icon; Open Graph & Twitter metadata; 404 page; loading states; network banner |
 
 ## Tech Stack
 

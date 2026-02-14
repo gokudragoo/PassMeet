@@ -13,11 +13,12 @@ export function Footer() {
             </div>
             <span className="text-lg font-bold text-white">PassMeet</span>
           </div>
-          <div className="flex gap-8 text-sm text-muted-foreground">
+          <div className="flex flex-wrap justify-center gap-6 md:gap-8 text-sm text-muted-foreground">
             <Link href="/" className="hover:text-primary transition-colors">Home</Link>
             <Link href="/organizer" className="hover:text-primary transition-colors">Organizer</Link>
             <Link href="/tickets" className="hover:text-primary transition-colors">My Tickets</Link>
             <Link href="/gate" className="hover:text-primary transition-colors">Gate</Link>
+            <Link href="/subscription" className="hover:text-primary transition-colors">Subscription</Link>
             <a href={EXPLORER_BASE} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">View on Explorer</a>
           </div>
           <p className="text-xs text-muted-foreground">
