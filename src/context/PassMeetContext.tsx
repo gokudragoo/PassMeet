@@ -681,7 +681,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           // ignore
         }
       }
-      refreshEvents().then(() => refreshTickets());
+      refreshEvents().then(() => refreshTickets()).catch((err) => {
+        LOG("initial refresh error", { message: (err as Error)?.message, stack: (err as Error)?.stack });
+        console.error("[PassMeet] initial refresh error", err);
+      });
     } else {
       setIsAuthenticated(false);
       setMyTickets([]);
