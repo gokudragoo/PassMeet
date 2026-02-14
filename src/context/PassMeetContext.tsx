@@ -290,14 +290,16 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           };
         }
 
-        for (const recordStr of records) {
+        for (const recordItem of records) {
           try {
-            const record = typeof recordStr === "string" ? JSON.parse(recordStr) : recordStr;
-            const data = record?.data ?? record;
-            if (!data?.event_id || !data?.ticket_id) continue;
+            const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
+            const data = record?.data ?? record?.plaintext ?? record;
+            const rawEventId = data?.event_id?.value ?? data?.event_id;
+            const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id;
+            if (!rawEventId || !rawTicketId) continue;
 
-            const eventIdRaw = String(data.event_id).replace("u64", "").replace(".private", "").trim();
-            const ticketIdRaw = String(data.ticket_id).replace("u64", "").replace(".private", "").trim();
+            const eventIdRaw = String(rawEventId).replace("u64", "").replace(".private", "").trim();
+            const ticketIdRaw = String(rawTicketId).replace("u64", "").replace(".private", "").trim();
 
             const event = eventMap[eventIdRaw];
 
@@ -311,7 +313,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
               status: "Valid",
               txHash: "",
               nullifier: "",
-              recordString: typeof recordStr === "string" ? recordStr : JSON.stringify(record)
+              recordString: typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem)
             });
           } catch {
             continue;
@@ -475,11 +477,9 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         try {
           const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
           const data = record?.data ?? record?.plaintext ?? record;
-          if (!data?.event_id && !data?.event_id?.value) continue;
-          if (!data?.ticket_id && !data?.ticket_id?.value) continue;
-
-          const rawEventId = data.event_id?.value ?? data.event_id;
-          const rawTicketId = data.ticket_id?.value ?? data.ticket_id;
+          const rawEventId = data?.event_id?.value ?? data?.event_id;
+          const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id;
+          if (!rawEventId || !rawTicketId) continue;
           const recordEventId = String(rawEventId).replace("u64", "").replace(".private", "").trim();
           const recordTicketId = String(rawTicketId).replace("u64", "").replace(".private", "").trim();
 
@@ -511,7 +511,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             t.id === ticket.id ? { ...t, status: "Used" as const } : t
           )
         );
-        return txHash;
+        return txHash ?? tempId;
       }
       return null;
     } catch (error) {
@@ -520,7 +520,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     } finally {
       setIsLoading(false);
     }
-  }, [publicKey, requestTransaction, requestRecords]);
+  }, [address, executeTransaction, transactionStatus, requestRecords]);
 
   // ---- Helpers ----
   async function pollForNewEventId(prevCount: number, maxAttempts = 15): Promise<number> {
@@ -534,13 +534,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
   // ---- Mount / wallet change ----
   useEffect(() => {
-    if (publicKey) {
-      // Restore cached auth
+    if (address) {
       const stored = localStorage.getItem("passmeet_auth");
       if (stored) {
         try {
           const parsed = JSON.parse(stored);
-          if (parsed.address === publicKey && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
+          if (parsed.address === address && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
             setIsAuthenticated(true);
           }
         } catch {
@@ -552,7 +551,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       setIsAuthenticated(false);
       setMyTickets([]);
     }
-  }, [publicKey, refreshEvents, refreshTickets]);
+  }, [address, refreshEvents, refreshTickets]);
 
   return (
     <PassMeetContext.Provider
