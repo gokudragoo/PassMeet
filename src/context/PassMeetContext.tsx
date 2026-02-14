@@ -265,8 +265,9 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       LOG("refreshEvents: done", { count: merged.length, eventIds: merged.map((e) => e.id) });
       setEvents(merged);
     } catch (error) {
-      LOG("refreshEvents: error", error);
-      console.error("Failed to refresh events:", error);
+      const err = error as Error;
+      LOG("refreshEvents: error", { message: err?.message, stack: err?.stack });
+      console.error("[PassMeet] refreshEvents: error", err?.message, err?.stack ?? error);
       setEvents([]);
     } finally {
       if (!silent) setIsDataLoading(false);
@@ -391,6 +392,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         }
         const merged = [...tickets, ...fromRef, ...optimisticOnly];
         LOG("refreshTickets: done", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
+        console.log("[PassMeet] refreshTickets: merge result", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
         return merged;
       });
       return tickets.length;
@@ -542,12 +544,14 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         });
         pendingOptimisticTicketRef.current = address ? { address, ticket: optimisticTicket } : null;
         LOG("buyTicket: optimistic ticket added", { eventId: eventIdNum, ticketId: nextTicketId });
+        console.log("[PassMeet] buyTicket: optimistic ticket added", { eventId: eventIdNum, ticketId: nextTicketId });
 
         await refreshEvents({ silent: true });
         await new Promise((r) => setTimeout(r, 100));
         for (let attempt = 0; attempt < 6; attempt++) {
           const count = await refreshTickets({ silent: true });
           LOG("buyTicket: refreshTickets attempt", { attempt, count });
+          console.log("[PassMeet] buyTicket: refreshTickets attempt", { attempt, count });
           if (count > 0) break;
           if (attempt < 5) await new Promise((r) => setTimeout(r, 4000));
         }
