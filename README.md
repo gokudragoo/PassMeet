@@ -116,9 +116,9 @@ PassMeet solves this by making tickets **private by default**, entry verificatio
 
 ### Next Wave Goals
 
-- [ ] Mainnet deployment and contract migration
-- [ ] Subscription payment flow (15/50 ALEO plan pricing in contract)
-- [ ] Mobile-optimized gate scanner (PWA / QR flow)
+- [ ] the speed or wbe is slwo we will fix and make it fast 
+- [ ] Subscription payment flow (15/50 ALEO plan pricing in contract) update the conrtact 
+- [ ] add qr code genrator 
 - [ ] Event discovery and search (filter by date, location)
 - [ ] Organizer analytics (aggregate stats without identity exposure)
 
