@@ -177,21 +177,20 @@ export default function SubscriptionPage() {
       console.log("[PassMeet Subscription] subscribe: tx submitted", { tempId });
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
-        const finalTxHash = txHash ?? tempId;
-        console.log("[PassMeet Subscription] subscribe: success", { txHash: finalTxHash });
+        console.log("[PassMeet Subscription] subscribe: success", { onChainTxHash: txHash ?? "pending" });
         setCurrentTier(tier.name);
         localStorage.setItem("passmeet_subscription", JSON.stringify({
           tier: tier.name,
           address,
           timestamp: Date.now(),
-          txHash: finalTxHash
+          txHash: txHash ?? tempId
         }));
+        const explorerUrl = txHash ? getTransactionUrl(txHash) : null;
         toast.success(`Subscribed to ${tier.name}!`, {
-          description: `Transaction: ${finalTxHash.slice(0, 16)}...`,
-          action: {
-            label: "View",
-            onClick: () => window.open(getTransactionUrl(finalTxHash), "_blank")
-          }
+          description: txHash ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.",
+          ...(explorerUrl && {
+            action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
+          })
         });
       } else {
         console.log("[PassMeet Subscription] subscribe: no txId");

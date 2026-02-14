@@ -309,9 +309,9 @@ export default function TicketsPage() {
                       </div>
                       <div>
                         <p className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Tx / Explorer</p>
-                        {ticket.txHash ? (
+                        {ticket.txHash && getTransactionUrl(ticket.txHash) ? (
                           <a
-                            href={getTransactionUrl(ticket.txHash)}
+                            href={getTransactionUrl(ticket.txHash)!}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="mt-1 font-mono text-xs text-primary hover:underline flex items-center gap-1"
@@ -319,6 +319,10 @@ export default function TicketsPage() {
                             {ticket.txHash.slice(0, 16)}...
                             <ExternalLink className="h-3 w-3" />
                           </a>
+                        ) : ticket.txHash ? (
+                          <span className="mt-1 font-mono text-xs text-muted-foreground">
+                            {ticket.txHash.slice(0, 16)}... (confirming)
+                          </span>
                         ) : (
                           <a
                             href={getProgramUrl(PASSMEET_V1_PROGRAM_ID)}
