@@ -399,9 +399,13 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
       setMyTickets((prev) => {
         const walletKeys = new Set(tickets.map((t) => `${t.eventId}_${t.ticketId}`));
-        const optimisticOnly = prev.filter(
-          (t) => !t.recordString && !walletKeys.has(`${t.eventId}_${t.ticketId}`)
-        );
+        // When wallet returns empty (e.g. not synced after refresh), keep prev from localStorage
+        const optimisticOnly =
+          tickets.length === 0
+            ? prev
+            : prev.filter(
+                (t) => !t.recordString && !walletKeys.has(`${t.eventId}_${t.ticketId}`)
+              );
         let fromRef: Ticket[] = [];
         const pending = pendingOptimisticTicketRef.current;
         if (pending && pending.address === address) {
@@ -412,7 +416,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             fromRef = [pending.ticket];
           }
         }
-        const merged = [...tickets, ...fromRef, ...optimisticOnly];
+        const merged =
+          tickets.length === 0 ? optimisticOnly : [...tickets, ...fromRef, ...optimisticOnly];
         LOG("refreshTickets: done", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
         console.log("[PassMeet] refreshTickets: merge result", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
         return merged;
