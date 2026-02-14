@@ -14,17 +14,19 @@ export async function GET() {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
-    
+
+    const eventId = body.id != null ? String(body.id) : `event_${Date.now()}`;
+
     const event: EventMetadata = {
-      id: body.id || `event_${Date.now()}`,
+      id: eventId,
       name: body.name,
       description: body.description || "",
       date: body.date,
       location: body.location,
       image: body.image || `https://images.unsplash.com/photo-1540575861501-7ad05823c95b?q=80&w=800&auto=format&fit=crop`,
-      organizer: body.organizer,
-      capacity: body.capacity,
-      price: body.price,
+      organizer: body.organizer ?? "",
+      capacity: body.capacity ?? 0,
+      price: body.price ?? 0,
       createdAt: new Date().toISOString(),
     };
 

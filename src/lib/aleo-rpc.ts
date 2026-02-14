@@ -1,5 +1,7 @@
 import { ALEO_RPC_URL, PASSMEET_V1_PROGRAM_ID } from "./aleo";
 
+const ALEO_JSON_RPC = "https://testnet3.aleorpc.com";
+
 export interface OnChainEventInfo {
   id: number;
   organizer: string;
@@ -8,26 +10,41 @@ export interface OnChainEventInfo {
   price: number;
 }
 
+async function fetchMappingValue(mappingName: string, key: string): Promise<string | null> {
+  const provableUrl = `${ALEO_RPC_URL}/program/${PASSMEET_V1_PROGRAM_ID}/mapping/${mappingName}/${encodeURIComponent(key)}`;
+  const response = await fetch(provableUrl);
+  if (response.ok) {
+    const text = await response.text();
+    if (text?.trim()) return text.trim();
+  }
+
+  const rpcResponse = await fetch(ALEO_JSON_RPC, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      jsonrpc: "2.0",
+      id: 1,
+      method: "getMappingValue",
+      params: {
+        program_id: PASSMEET_V1_PROGRAM_ID,
+        mapping_name: mappingName,
+        key
+      }
+    })
+  });
+  const json = await rpcResponse.json();
+  return json?.result ?? null;
+}
+
 /**
  * Fetches the current event counter from the passmeet contract.
  * The event_counter mapping uses key 0u8 and returns the latest event ID (u64).
  */
 export async function getEventCounter(): Promise<number> {
-  const key = "0u8";
-  const url = `${ALEO_RPC_URL}/program/${PASSMEET_V1_PROGRAM_ID}/mapping/event_counter/${encodeURIComponent(key)}`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    if (response.status === 404) return 0;
-    throw new Error(`Failed to fetch event counter: ${response.statusText}`);
-  }
-
-  const text = await response.text();
-  if (!text || text.trim() === "") return 0;
-
+  const text = await fetchMappingValue("event_counter", "0u8");
+  if (!text) return 0;
   const match = text.match(/(\d+)u64/);
-  if (match) return parseInt(match[1], 10);
-  return 0;
+  return match ? parseInt(match[1], 10) : 0;
 }
 
 /**
@@ -35,17 +52,8 @@ export async function getEventCounter(): Promise<number> {
  */
 export async function getEvent(eventId: number): Promise<OnChainEventInfo | null> {
   const key = `${eventId}u64`;
-  const url = `${ALEO_RPC_URL}/program/${PASSMEET_V1_PROGRAM_ID}/mapping/events/${encodeURIComponent(key)}`;
-
-  const response = await fetch(url);
-  if (!response.ok) {
-    if (response.status === 404) return null;
-    throw new Error(`Failed to fetch event ${eventId}: ${response.statusText}`);
-  }
-
-  const text = await response.text();
-  if (!text || text.trim() === "") return null;
-
+  const text = await fetchMappingValue("events", key);
+  if (!text) return null;
   try {
     return parseEventInfo(text, eventId);
   } catch {

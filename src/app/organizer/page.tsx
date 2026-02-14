@@ -70,7 +70,7 @@ export default function OrganizerPage() {
   };
 
   const myEvents = events.filter(e => e.organizerAddress === publicKey);
-  const allUserEvents = events.filter(e => e.id.startsWith("user_"));
+  const otherUserEvents = events.filter(e => e.organizerAddress !== publicKey);
   const totalAttendees = myEvents.reduce((sum, e) => sum + e.ticketCount, 0);
   const totalCapacity = myEvents.reduce((sum, e) => sum + e.capacity, 0);
 
@@ -291,11 +291,11 @@ export default function OrganizerPage() {
             )}
           </div>
 
-          {allUserEvents.length > 0 && allUserEvents.length !== myEvents.length && (
+          {otherUserEvents.length > 0 && (
             <div>
-              <h3 className="text-lg font-bold text-white mb-4">All User-Created Events</h3>
+              <h3 className="text-lg font-bold text-white mb-4">Other On-Chain Events</h3>
               <div className="grid gap-4 md:grid-cols-2">
-                {allUserEvents.filter(e => e.organizerAddress !== publicKey).map((event) => (
+                {otherUserEvents.map((event) => (
                   <motion.div
                     key={event.id}
                     whileHover={{ y: -3 }}

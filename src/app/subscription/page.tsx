@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
+import { Transaction, WalletAdapterNetwork } from "@demox-labs/aleo-wallet-adapter-base";
 import { Button } from "@/components/ui/button";
 import { 
   Check, 
@@ -19,18 +20,10 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
-
-function generateTxHash(): string {
-  const chars = "abcdefghijklmnopqrstuvwxyz0123456789";
-  let hash = "at1";
-  for (let i = 0; i < 58; i++) {
-    hash += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return hash;
-}
+import { PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
 
 export default function SubscriptionPage() {
-  const { publicKey } = useWallet();
+  const { publicKey, requestTransaction } = useWallet();
   const { isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState("Free");
@@ -94,31 +87,45 @@ export default function SubscriptionPage() {
       toast.error("Please sign to verify your identity first");
       return;
     }
+    if (!requestTransaction) {
+      toast.error("Wallet does not support transactions");
+      return;
+    }
     if (tier.id === 0) return;
 
     setLoading(tier.name);
     try {
       toast.info(`Initiating Subscription to ${tier.name} on Aleo...`);
-      
-      await new Promise(resolve => setTimeout(resolve, 2500));
-      
-      const txHash = generateTxHash();
-      setCurrentTier(tier.name);
-      
-      localStorage.setItem("passmeet_subscription", JSON.stringify({
-        tier: tier.name,
-        address: publicKey,
-        timestamp: Date.now(),
-        txHash
-      }));
-      
-      toast.success(`Subscribed to ${tier.name}!`, {
-        description: `Transaction: ${txHash.slice(0, 16)}...`,
-        action: {
-          label: "View",
-          onClick: () => window.open(`https://explorer.provable.com/testnet/transaction/${txHash}`, "_blank")
-        }
-      });
+
+      const aleoTransaction = Transaction.createTransaction(
+        publicKey,
+        WalletAdapterNetwork.Testnet,
+        PASSMEET_SUBS_PROGRAM_ID,
+        "subscribe",
+        [`${tier.id}u8`, "2592000u32"],
+        100000
+      );
+
+      const txHash = await requestTransaction(aleoTransaction);
+
+      if (txHash) {
+        setCurrentTier(tier.name);
+        localStorage.setItem("passmeet_subscription", JSON.stringify({
+          tier: tier.name,
+          address: publicKey,
+          timestamp: Date.now(),
+          txHash
+        }));
+        toast.success(`Subscribed to ${tier.name}!`, {
+          description: `Transaction: ${txHash.slice(0, 16)}...`,
+          action: {
+            label: "View",
+            onClick: () => window.open(`https://explorer.provable.com/testnet/transaction/${txHash}`, "_blank")
+          }
+        });
+      } else {
+        toast.error("Transaction was not confirmed");
+      }
     } catch (error) {
       console.error(error);
       const errorMessage = error instanceof Error ? error.message : "Subscription failed";
