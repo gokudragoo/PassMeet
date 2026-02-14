@@ -114,6 +114,9 @@ PassMeet solves this by making tickets **private by default**, entry verificatio
 - **Tickets disappearing on refresh** — Keep `localStorage` tickets when wallet returns empty; merge with wallet records
 - **Subscription price mismatch** — UI now shows 0.1 ALEO (actual tx fee) instead of misleading 15/50 ALEO
 
+
+
+
 ### Next Wave Goals
 
 - [ ] the speed or wbe is slwo we will fix and make it fast 
