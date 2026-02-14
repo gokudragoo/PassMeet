@@ -39,9 +39,9 @@ export default function GatePage() {
 
   const NETWORK_LABEL = ALEO_NETWORK === "mainnet" ? "Aleo Mainnet" : "Aleo Testnet";
 
-  // Refresh tickets when entering gate with wallet connected - ensures recordString is populated
+  // Refresh tickets when entering gate with wallet connected - ensures recordString is populated from wallet
   useEffect(() => {
-    if (address && myTickets.length > 0) {
+    if (address) {
       refreshTickets({ silent: true }).catch(() => {});
     }
   }, [address, refreshTickets]);
