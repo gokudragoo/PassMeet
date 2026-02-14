@@ -50,7 +50,7 @@ try {
     if ($r.StatusCode -eq 200) {
         $json = $r.Content | ConvertFrom-Json
         if ($null -ne $json.events) {
-            Write-Pass "GET /api/events - 200 OK (events array present, count: $($json.events.Count))"
+            Write-Pass "GET /api/events - 200 OK (events array present, count: $($json.events.Count) - no IPFS)"
             $passed++
             $results += @{ Name = "GET /api/events"; Status = "PASS" }
         } else {
@@ -85,7 +85,7 @@ try {
     if ($r.StatusCode -eq 200) {
         $json = $r.Content | ConvertFrom-Json
         if ($json.success -eq $true) {
-            Write-Pass "POST /api/events - 200 OK (success: true, cid: $($json.cid))"
+            Write-Pass "POST /api/events - 200 OK (success: true, no-op)"
             $passed++
             $results += @{ Name = "POST /api/events"; Status = "PASS" }
         } else {
@@ -101,7 +101,7 @@ try {
 } catch {
     $status = $_.Exception.Response.StatusCode.value__
     if ($status -eq 500) {
-        Write-Host "  [WARN] POST /api/events - 500 (may indicate Pinata not configured; metadata saved to localStorage only)" -ForegroundColor Yellow
+        Write-Host "  [WARN] POST /api/events - 500" -ForegroundColor Yellow
         $passed++
         $results += @{ Name = "POST /api/events"; Status = "WARN"; Detail = "500 - Pinata may be unconfigured" }
     } else {
