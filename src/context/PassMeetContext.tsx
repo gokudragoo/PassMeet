@@ -703,8 +703,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         );
       }
 
-      // Pass record as-is: wallet may expect string (Aleo plaintext format) or serializable object
-      const recordInput = recordToUse;
+      // Pass record - must be string in Aleo plaintext format for Leo wallet
+      const recordInput =
+        typeof recordToUse === "string"
+          ? recordToUse
+          : (recordToUse as { toString?: () => string }).toString?.() ?? String(recordToUse);
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "verify_entry",
