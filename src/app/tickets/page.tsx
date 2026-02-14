@@ -67,7 +67,11 @@ export default function TicketsPage() {
       }
     } catch (error) {
       console.error(error);
-      const errorMessage = error instanceof Error ? error.message : "Transaction failed";
+      let errorMessage = error instanceof Error ? error.message : "Transaction failed";
+      if (errorMessage.toLowerCase().includes("authorization")) {
+        errorMessage =
+          "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits—one for the transaction and one for the fee (~0.025 credits). Try splitting your balance or getting more testnet tokens from a faucet.";
+      }
       toast.error(errorMessage);
     } finally {
       setLoading(null);
@@ -90,7 +94,11 @@ export default function TicketsPage() {
       }
     } catch (error) {
       console.error(error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to generate proof";
+      let errorMessage = error instanceof Error ? error.message : "Failed to generate proof";
+      if (errorMessage.toLowerCase().includes("authorization")) {
+        errorMessage =
+          "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits. Try splitting your balance or getting more testnet tokens.";
+      }
       toast.error(errorMessage);
     } finally {
       setLoading(null);

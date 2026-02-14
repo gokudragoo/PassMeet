@@ -197,35 +197,41 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const localMeta = getLocalMetadata();
 
       // 4) Merge on-chain data with metadata
-      const merged: Event[] = onChainEvents.map(({ id, data }) => {
-        const idStr = String(id);
-        const ipfs = ipfsMeta[idStr];
-        const local = localMeta[idStr];
+      // Only show events that have metadata (IPFS or localStorage) to avoid orphan/test data
+      const merged: Event[] = onChainEvents
+        .map(({ id, data }) => {
+          const idStr = String(id);
+          const ipfs = ipfsMeta[idStr];
+          const local = localMeta[idStr];
 
-        // Priority: IPFS > localStorage > defaults
-        const name = ipfs?.name || local?.name || `Event #${id}`;
-        const date = ipfs?.date || local?.date || "";
-        const location = ipfs?.location || local?.location || "";
-        const image = ipfs?.image || DEFAULT_IMAGE;
+          // Skip events with no metadata (avoids showing placeholder "Event #1" from orphan on-chain data)
+          if (!ipfs && !local) return null;
 
-        const organizerShort = data.organizer
-          ? `${data.organizer.slice(0, 10)}...${data.organizer.slice(-4)}`
-          : "Unknown";
+          // Priority: IPFS > localStorage > defaults
+          const name = ipfs?.name || local?.name || `Event #${id}`;
+          const date = ipfs?.date || local?.date || "";
+          const location = ipfs?.location || local?.location || "";
+          const image = ipfs?.image || DEFAULT_IMAGE;
 
-        return {
-          id: idStr,
-          name,
-          organizer: ipfs?.organizer || organizerShort,
-          organizerAddress: data.organizer,
-          capacity: data.capacity,
-          ticketCount: data.ticket_count,
-          price: data.price / 1_000_000,
-          date,
-          location,
-          image,
-          status: "Active" as const,
-        };
-      });
+          const organizerShort = data.organizer
+            ? `${data.organizer.slice(0, 10)}...${data.organizer.slice(-4)}`
+            : "Unknown";
+
+          return {
+            id: idStr,
+            name,
+            organizer: ipfs?.organizer || organizerShort,
+            organizerAddress: data.organizer,
+            capacity: data.capacity,
+            ticketCount: data.ticket_count,
+            price: data.price / 1_000_000,
+            date,
+            location,
+            image,
+            status: "Active" as const,
+          };
+        })
+        .filter((e): e is Event => e != null);
 
       setEvents(merged);
     } catch (error) {

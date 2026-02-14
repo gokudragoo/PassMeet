@@ -63,7 +63,12 @@ export default function OrganizerPage() {
       }
     } catch (error) {
       console.error(error);
-      const errorMessage = error instanceof Error ? error.message : "Failed to create event";
+      let errorMessage = error instanceof Error ? error.message : "Failed to create event";
+      // Leo Wallet: "Could not create authorization" usually means insufficient UTXOs
+      if (errorMessage.toLowerCase().includes("authorization")) {
+        errorMessage =
+          "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits—one for the transaction and one for the fee (~0.025 credits). Try splitting your balance or getting more testnet tokens from a faucet.";
+      }
       toast.error(errorMessage);
     } finally {
       setLoading(false);
