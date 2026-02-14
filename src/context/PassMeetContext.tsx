@@ -226,8 +226,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
       // 4) Merge on-chain data with metadata
       // Only show events that have metadata (IPFS or localStorage) to avoid orphan/test data
-      const merged: Event[] = onChainEvents
-        .map(({ id, data }) => {
+      const merged = onChainEvents
+        .map(({ id, data }): Event | null => {
           const idStr = String(id);
           const ipfs = ipfsMeta[idStr];
           const local = localMeta[idStr];
