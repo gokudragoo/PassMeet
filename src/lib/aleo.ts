@@ -10,7 +10,10 @@ export const PROGRAM_IDS = [
 ];
 
 /** Provable Explorer - use to verify transactions and programs on-chain */
-export const EXPLORER_BASE = "https://testnet.explorer.provable.com";
+export const EXPLORER_BASE =
+  ALEO_NETWORK === "mainnet"
+    ? "https://explorer.provable.com"
+    : "https://testnet.explorer.provable.com";
 
 /** Aleo on-chain tx IDs start with "at1" and are 61+ chars. Temp UUIDs (d8f2dae9-...) are invalid for explorer. */
 export function isOnChainTxHash(id: string): boolean {

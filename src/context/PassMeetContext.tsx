@@ -596,31 +596,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
   // ---- Verify Entry ----
   const verifyEntry = useCallback(async (ticket: Ticket): Promise<string | null> => {
-    if (!address || !executeTransaction || !requestRecords) return null;
+    if (!address || !executeTransaction) return null;
 
     LOG("verifyEntry: starting", { ticketId: ticket.id, eventId: ticket.eventId, hasRecordString: !!ticket.recordString });
     try {
-      let records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
-      LOG("verifyEntry: records fetched", { count: records?.length ?? 0 });
-
-      if ((!records || records.length === 0) && !ticket.recordString) {
-        await new Promise((r) => setTimeout(r, 3000));
-        records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
-        LOG("verifyEntry: retry records fetched", { count: records?.length ?? 0 });
-      }
-
-      if (!records || records.length === 0) {
-        throw new Error(
-          ticket.recordString
-            ? "No ticket records found in wallet. Please ensure you have minted a ticket."
-            : "Wallet has not synced your ticket yet. Please wait a minute and try again."
-        );
-      }
-
-      let recordToUse: string | null = null;
-      const targetEventId = ticket.eventId;
-      const targetTicketId = ticket.ticketId;
-
       function extractU64Verify(val: unknown): string | null {
         if (val == null) return null;
         if (typeof val === "bigint") return String(val);
@@ -629,30 +608,88 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         return m ? m[1] : s.replace(/u64|\.private/g, "").trim() || null;
       }
 
-      for (const recordItem of records) {
+      function parseRecordIds(recordItem: unknown): { eventId: string; ticketId: string } | null {
         try {
           const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
-          const data = record?.data ?? record?.plaintext ?? record;
+          const data = record?.data ?? record?.plaintext ?? record ?? recordItem;
           const rawEventId = data?.event_id?.value ?? data?.event_id ?? record?.event_id ?? record?.eventId;
           const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id ?? record?.ticket_id ?? record?.ticketId;
-          const recordEventId = extractU64Verify(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
-          const recordTicketId = extractU64Verify(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
-          if (!recordEventId || !recordTicketId) continue;
+          const eventId = extractU64Verify(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
+          const ticketId = extractU64Verify(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
+          if (eventId && ticketId) return { eventId, ticketId };
+          const str = typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem);
+          const eventMatch = str.match(/event_id["\s:]+(\d+)u64/);
+          const ticketMatch = str.match(/ticket_id["\s:]+(\d+)u64/);
+          if (eventMatch && ticketMatch) return { eventId: eventMatch[1], ticketId: ticketMatch[1] };
+          return null;
+        } catch {
+          return null;
+        }
+      }
 
-          if (recordEventId === targetEventId && recordTicketId === targetTicketId) {
+      const targetEventId = ticket.eventId;
+      const targetTicketId = ticket.ticketId;
+      let recordToUse: string | null = null;
+
+      // Use cached recordString when available and valid (bypasses requestRecords)
+      if (ticket.recordString) {
+        const parsed = parseRecordIds(ticket.recordString);
+        if (parsed && parsed.eventId === targetEventId && parsed.ticketId === targetTicketId) {
+          recordToUse = ticket.recordString;
+          LOG("verifyEntry: using cached recordString", { eventId: targetEventId, ticketId: targetTicketId });
+        }
+      }
+
+      if (!recordToUse && requestRecords) {
+        let records: unknown[] | null = null;
+        try {
+          records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+          LOG("verifyEntry: records fetched", { count: records?.length ?? 0 });
+        } catch (reqErr) {
+          const msg = (reqErr as Error)?.message ?? "";
+          throw new Error(
+            msg.toLowerCase().includes("request") && msg.toLowerCase().includes("record")
+              ? "Wallet could not provide records. Ensure you approved the request and your wallet is on the correct network. Try refreshing your tickets first."
+              : msg || "Failed to request records from wallet."
+          );
+        }
+
+        if ((!records || records.length === 0)) {
+          await new Promise((r) => setTimeout(r, 3000));
+          try {
+            records = await requestRecords(PASSMEET_V1_PROGRAM_ID, true);
+            LOG("verifyEntry: retry records fetched", { count: records?.length ?? 0 });
+          } catch {
+            throw new Error(
+              "Wallet has not synced your ticket yet. Please wait a minute, refresh your tickets, and try again."
+            );
+          }
+        }
+
+        if (!records || records.length === 0) {
+          throw new Error(
+            "Wallet has not synced your ticket yet. Please wait a minute and try again."
+          );
+        }
+
+        for (const recordItem of records) {
+          const parsed = parseRecordIds(recordItem);
+          if (parsed && parsed.eventId === targetEventId && parsed.ticketId === targetTicketId) {
             recordToUse = typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem);
             break;
           }
-        } catch {
-          continue;
+        }
+
+        if (!recordToUse) {
+          throw new Error(
+            "Could not find matching ticket record in your wallet. Try refreshing your tickets first."
+          );
         }
       }
 
       if (!recordToUse) {
         throw new Error(
-          ticket.recordString
-            ? "Could not find matching ticket record for this event in your wallet."
-            : "Wallet has not synced your ticket yet. Please wait a minute and try again."
+          "No ticket record available. Please refresh your tickets and ensure your wallet has synced."
         );
       }
 

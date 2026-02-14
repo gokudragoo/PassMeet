@@ -1,4 +1,4 @@
-import { ALEO_RPC_URL, PASSMEET_V1_PROGRAM_ID } from "./aleo";
+import { ALEO_NETWORK, ALEO_RPC_URL, PASSMEET_V1_PROGRAM_ID } from "./aleo";
 
 const ALEO_JSON_RPC = "https://testnet3.aleorpc.com";
 

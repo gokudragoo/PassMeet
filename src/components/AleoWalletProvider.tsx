@@ -12,7 +12,7 @@ import { Network } from "@provablehq/aleo-types";
 import { DecryptPermission } from "@provablehq/aleo-wallet-adaptor-core";
 import { PassMeetProvider } from "@/context/PassMeetContext";
 import { SplashScreen } from "@/components/SplashScreen";
-import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
+import { ALEO_NETWORK, PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
 
 import "@provablehq/aleo-wallet-adaptor-react-ui/dist/styles.css";
 
@@ -52,7 +52,7 @@ export function AleoWalletProvider({ children }: { children: ReactNode }) {
   return (
     <ProvableWalletProvider
       wallets={wallets}
-      network={Network.TESTNET}
+      network={ALEO_NETWORK === "mainnet" ? Network.MAINNET : Network.TESTNET}
       autoConnect={true}
       decryptPermission={DecryptPermission.UponRequest}
       programs={programs}
