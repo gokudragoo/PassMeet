@@ -120,6 +120,27 @@ function saveLocalMetadata(id: string, meta: { name: string; date: string; locat
   localStorage.setItem("passmeet_event_metadata", JSON.stringify(map));
 }
 
+const TICKETS_STORAGE_PREFIX = "passmeet_my_tickets_";
+
+function getTicketsFromLocalStorage(address: string): Ticket[] {
+  try {
+    const stored = localStorage.getItem(`${TICKETS_STORAGE_PREFIX}${address}`);
+    if (!stored) return [];
+    const parsed = JSON.parse(stored);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveTicketsToLocalStorage(address: string, tickets: Ticket[]) {
+  try {
+    localStorage.setItem(`${TICKETS_STORAGE_PREFIX}${address}`, JSON.stringify(tickets));
+  } catch {
+    // ignore quota or parse errors
+  }
+}
+
 // ---------------------
 // Provider
 // ---------------------
@@ -669,12 +690,22 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     throw new Error("Timed out waiting for on-chain event confirmation");
   }
 
+  // ---- Persist tickets to localStorage (per-address) ----
+  useEffect(() => {
+    if (address && myTickets.length > 0) {
+      saveTicketsToLocalStorage(address, myTickets);
+      console.log("[PassMeet] tickets persisted", { address: address.slice(0, 12) + "...", count: myTickets.length });
+    }
+  }, [address, myTickets]);
+
   // ---- Mount / wallet change ----
   useEffect(() => {
     if (address) {
-      setMyTickets([]);
+      const saved = getTicketsFromLocalStorage(address);
+      setMyTickets(saved);
       pendingOptimisticTicketRef.current = null;
-      LOG("wallet connected: refreshing data", { address: address.slice(0, 12) + "..." });
+      LOG("wallet connected: refreshing data", { address: address.slice(0, 12) + "...", savedTickets: saved.length });
+      console.log("[PassMeet] loaded tickets from storage", { count: saved.length });
       const stored = localStorage.getItem("passmeet_auth");
       if (stored) {
         try {
@@ -686,7 +717,16 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           // ignore
         }
       }
-      refreshEvents().then(() => refreshTickets()).catch((err) => {
+      const doRefresh = async () => {
+        await refreshEvents();
+        let count = await refreshTickets();
+        for (let retry = 0; retry < 2 && count === 0; retry++) {
+          await new Promise((r) => setTimeout(r, 3000));
+          count = await refreshTickets({ silent: true });
+          console.log("[PassMeet] refreshTickets retry", { retry: retry + 1, count });
+        }
+      };
+      doRefresh().catch((err) => {
         LOG("initial refresh error", { message: (err as Error)?.message, stack: (err as Error)?.stack });
         console.error("[PassMeet] initial refresh error", err);
       });
