@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@demox-labs/aleo-wallet-adapter-react";
 import { Transaction, WalletAdapterNetwork } from "@demox-labs/aleo-wallet-adapter-base";
@@ -21,12 +21,66 @@ import {
 import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
 import { PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
+import { getSubscription } from "@/lib/aleo-subs-rpc";
+
+const TIER_NAMES: Record<number, string> = {
+  0: "Free",
+  1: "Organizer Pro",
+  2: "Enterprise",
+};
 
 export default function SubscriptionPage() {
   const { publicKey, requestTransaction } = useWallet();
   const { isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState("Free");
+  const [tierLoading, setTierLoading] = useState(true);
+
+  useEffect(() => {
+    async function fetchTier() {
+      if (!publicKey) {
+        setTierLoading(false);
+        setCurrentTier("Free");
+        return;
+      }
+      setTierLoading(true);
+      try {
+        const sub = await getSubscription(publicKey);
+        if (sub && sub.tier > 0 && sub.expiry > Math.floor(Date.now() / 1000)) {
+          setCurrentTier(TIER_NAMES[sub.tier] ?? "Free");
+        } else {
+          const stored = localStorage.getItem("passmeet_subscription");
+          if (stored) {
+            try {
+              const parsed = JSON.parse(stored);
+              if (parsed.address === publicKey) {
+                setCurrentTier(parsed.tier ?? "Free");
+              }
+            } catch {
+              setCurrentTier("Free");
+            }
+          } else {
+            setCurrentTier("Free");
+          }
+        }
+      } catch {
+        const stored = localStorage.getItem("passmeet_subscription");
+        if (stored) {
+          try {
+            const parsed = JSON.parse(stored);
+            if (parsed.address === publicKey) setCurrentTier(parsed.tier ?? "Free");
+          } catch {
+            setCurrentTier("Free");
+          }
+        } else {
+          setCurrentTier("Free");
+        }
+      } finally {
+        setTierLoading(false);
+      }
+    }
+    fetchTier();
+  }, [publicKey]);
 
   const tiers = [
     {

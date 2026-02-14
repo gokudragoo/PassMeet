@@ -31,11 +31,12 @@ export async function POST(request: Request) {
     };
 
     const cid = await saveEventMetadata(event);
-    
-    return NextResponse.json({ 
-      success: true, 
-      cid,
-      event 
+
+    return NextResponse.json({
+      success: true,
+      cid: cid ?? null,
+      event,
+      ipfsSaved: cid != null,
     });
   } catch (error) {
     console.error("Failed to create event:", error);

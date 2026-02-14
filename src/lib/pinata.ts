@@ -113,7 +113,11 @@ export async function unpinFromIPFS(cid: string): Promise<void> {
   }
 }
 
-export async function saveEventMetadata(event: EventMetadata): Promise<string> {
+export async function saveEventMetadata(event: EventMetadata): Promise<string | null> {
+  if (!PINATA_JWT) {
+    return null;
+  }
+
   const eventCID = await uploadToIPFS(event, `passmeet_event_${event.id}`);
   
   const existingIndexCID = await getEventsCID();
