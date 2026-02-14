@@ -8,15 +8,55 @@
 
 **The world's first privacy-first event ticketing platform powered by Zero-Knowledge proofs.**
 
-[Live Demo](https://passmeet.vercel.app/) | [Explorer](https://explorer.provable.com/testnet/program/passmeet_v1_7788.aleo)
+[Live Demo](https://passmeet.vercel.app/) | [Demo Video](https://youtu.be/lnh7xxyln7w) | [Explorer](https://explorer.provable.com/testnet/program/passmeet_v1_7788.aleo)
 
 </div>
 
 ---
 
-## Overview
+## 1. Project Overview
 
-PassMeet is a fully on-chain, privacy-preserving event ticketing and access control platform built on Aleo. It leverages Zero-Knowledge Proofs (ZKP) to allow attendees to purchase tickets and verify their entry at event gates **without revealing their wallet addresses or transaction history**.
+### Name & Description
+
+**PassMeet** is a fully on-chain, privacy-preserving event ticketing and access control platform built on Aleo. Attendees purchase tickets and verify entry at event gates **without revealing wallet addresses or transaction history** — powered by Zero-Knowledge Proofs (ZKP).
+
+### Problem Being Solved
+
+- **Traditional ticketing** exposes attendee identities, purchase history, and wallet addresses to organizers and third parties.
+- **Centralized platforms** hold sensitive data, enabling profiling, resale tracking, and privacy breaches.
+- **QR-based systems** are easily forged and offer no cryptographic guarantees.
+
+PassMeet solves this by making tickets **private by default**, entry verification **anonymous**, and all state **on-chain** — no central database.
+
+### Why Privacy Matters for This Use Case
+
+| Concern | How PassMeet Addresses It |
+|---------|---------------------------|
+| **Identity exposure** | Organizers see only "valid ticket" at the gate, never wallet or identity |
+| **Purchase history** | Ticket records are private; no one can trace which events you attended |
+| **Resale / scalping** | Tickets are cryptographically bound; selective disclosure possible for future features |
+| **Data breaches** | No central database of attendees; state lives on Aleo |
+| **Surveillance** | Zero-knowledge proofs prove validity without revealing anything else |
+
+### Product-Market Fit (PMF) & Go-To-Market (GTM) Plan
+
+| PMF | Target: Privacy-conscious event organizers and attendees (conferences, meetups, exclusive events). Value: Trustless, private ticketing with ZK verification. |
+|-----|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| **GTM** | 1) Partner with Aleo ecosystem events for pilot; 2) Integrate with existing event tools (Calendly, Luma); 3) Launch on mainnet post-testnet validation; 4) Community-driven adoption via hackathons and grants. |
+
+---
+
+## 2. Working Demo
+
+| Requirement | Status |
+|-------------|--------|
+| **Deployed on Aleo Testnet** | ✅ Live at [passmeet.vercel.app](https://passmeet.vercel.app/) — [Watch Demo](https://youtu.be/lnh7xxyln7w) |
+| **Functional Leo Smart Contracts** | ✅ `passmeet_v1_7788.aleo` (events, tickets, verify_entry) + `passmeet_subs_7788.aleo` (subscriptions) |
+| **Basic UI Demonstrating Core Features** | ✅ Landing, Organizer, My Tickets, Gate, Subscription — full flow works |
+
+**Core flows verified:**
+- Create event → Mint ticket → Generate ZK proof → Verify entry on-chain
+- Leo Wallet, Puzzle Wallet, Fox Wallet supported
 
 ## Deployed Contracts (Aleo Testnet)
 
@@ -40,9 +80,20 @@ PassMeet is a fully on-chain, privacy-preserving event ticketing and access cont
 | **IPFS Storage** | Event metadata stored on Pinata IPFS for decentralized data availability |
 
 
-## Update in Wave 2
+## 3. Technical Documentation
 
-Production-ready polish and fixes applied:
+| Requirement | Location |
+|-------------|----------|
+| **GitHub Repository** | *(Add your repo URL — e.g. `https://github.com/your-org/PassMeet`)* |
+| **README** | This file — setup, env vars, quick start, architecture |
+| **Architecture Overview** | See [Architecture](#architecture) section below |
+| **Privacy Model** | See [Privacy Guarantees](#privacy-guarantees) and [Record Format & Wallet Integration](#record-format--wallet-integration) |
+
+---
+
+## 4. Progress Changelog (Wave 2+)
+
+### What We Built Since Last Submission
 
 | Area | Improvements |
 |------|--------------|
@@ -55,6 +106,21 @@ Production-ready polish and fixes applied:
 | **Network** | RPC/Explorer paths use `ALEO_NETWORK` (testnet/mainnet) |
 | **UX** | Gate page: dynamic network label, error UX with "Refresh Tickets & Try Again"; auto-refresh on load |
 | **Production** | Favicon & Apple icon; Open Graph & Twitter metadata; 404 page; loading states |
+
+### Feedback Incorporated
+
+- **Record format errors** — Fixed "Input is not a valid record type" by using ciphertext when present and correct owner format
+- **NOT_GRANTED** — Switched to `DecryptPermission.OnChainHistory`; added clear messaging for users to disconnect/reconnect
+- **Tickets disappearing on refresh** — Keep `localStorage` tickets when wallet returns empty; merge with wallet records
+- **Subscription price mismatch** — UI now shows 0.1 ALEO (actual tx fee) instead of misleading 15/50 ALEO
+
+### Next Wave Goals
+
+- [ ] Mainnet deployment and contract migration
+- [ ] Subscription payment flow (15/50 ALEO plan pricing in contract)
+- [ ] Mobile-optimized gate scanner (PWA / QR flow)
+- [ ] Event discovery and search (filter by date, location)
+- [ ] Organizer analytics (aggregate stats without identity exposure)
 
 ## Tech Stack
 
