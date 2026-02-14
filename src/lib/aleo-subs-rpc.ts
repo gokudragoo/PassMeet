@@ -1,4 +1,4 @@
-import { ALEO_RPC_URL, PASSMEET_SUBS_PROGRAM_ID } from "./aleo";
+import { ALEO_NETWORK, ALEO_RPC_URL, PASSMEET_SUBS_PROGRAM_ID } from "./aleo";
 
 const ALEO_JSON_RPC = "https://testnet3.aleorpc.com";
 
@@ -9,7 +9,7 @@ export interface OnChainSubscription {
 
 async function fetchSubsMappingValue(key: string): Promise<string | null> {
   try {
-    const url = `${ALEO_RPC_URL}/testnet/program/${PASSMEET_SUBS_PROGRAM_ID}/mapping/user_subs/${encodeURIComponent(key)}`;
+    const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/program/${PASSMEET_SUBS_PROGRAM_ID}/mapping/user_subs/${encodeURIComponent(key)}`;
     const response = await fetch(url, {
       cache: "no-store",
       headers: { Accept: "application/json" },

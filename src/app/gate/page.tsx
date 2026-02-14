@@ -20,7 +20,7 @@ import {
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { usePassMeet, Ticket } from "@/context/PassMeetContext";
-import { getTransactionUrl } from "@/lib/aleo";
+import { ALEO_NETWORK, getTransactionUrl } from "@/lib/aleo";
 
 interface VerificationData {
   eventId: string;
@@ -32,9 +32,12 @@ interface VerificationData {
 
 export default function GatePage() {
   const { address } = useWallet();
-  const { myTickets, verifyEntry, isAuthenticated } = usePassMeet();
+  const { myTickets, verifyEntry, refreshTickets, isAuthenticated } = usePassMeet();
   const [status, setStatus] = useState<"idle" | "selecting" | "verifying" | "success" | "error">("idle");
   const [verificationData, setVerificationData] = useState<VerificationData | null>(null);
+  const [lastError, setLastError] = useState<string | null>(null);
+
+  const NETWORK_LABEL = ALEO_NETWORK === "mainnet" ? "Aleo Mainnet" : "Aleo Testnet";
 
   const handleStartScan = () => {
     if (!address) {
@@ -66,7 +69,7 @@ export default function GatePage() {
           eventId: ticket.eventId,
           eventName: ticket.eventName,
           timestamp: new Date().toLocaleTimeString(),
-          network: "Aleo Testnet",
+          network: NETWORK_LABEL,
           txHash: txId
         });
         setStatus("success");

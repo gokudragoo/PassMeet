@@ -49,7 +49,7 @@ async function fetchMappingValue(
   key: string
 ): Promise<string | null> {
   try {
-    const url = `${ALEO_RPC_URL}/testnet/program/${programId}/mapping/${mappingName}/${encodeURIComponent(key)}`;
+    const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/program/${programId}/mapping/${mappingName}/${encodeURIComponent(key)}`;
     const response = await fetch(url, {
       cache: "no-store",
       headers: { Accept: "application/json" },
