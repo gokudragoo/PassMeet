@@ -23,6 +23,7 @@ import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { usePassMeet, Ticket } from "@/context/PassMeetContext";
+import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
 
 export default function TicketsPage() {
   const { publicKey } = useWallet();
@@ -59,7 +60,7 @@ export default function TicketsPage() {
           description: `Transaction: ${txId.slice(0, 16)}...`,
           action: {
             label: "View",
-            onClick: () => window.open(`https://explorer.provable.com/testnet/transaction/${txId}`, "_blank")
+            onClick: () => window.open(getTransactionUrl(txId), "_blank")
           }
         });
         setActiveTab("tickets");
@@ -293,10 +294,10 @@ export default function TicketsPage() {
                         </div>
                       </div>
                       <div>
-                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Status</p>
+                        <p className="text-xs uppercase tracking-wider text-muted-foreground font-bold">Tx / Explorer</p>
                         {ticket.txHash ? (
                           <a
-                            href={`https://explorer.provable.com/testnet/transaction/${ticket.txHash}`}
+                            href={getTransactionUrl(ticket.txHash)}
                             target="_blank"
                             rel="noopener noreferrer"
                             className="mt-1 font-mono text-xs text-primary hover:underline flex items-center gap-1"
@@ -305,10 +306,16 @@ export default function TicketsPage() {
                             <ExternalLink className="h-3 w-3" />
                           </a>
                         ) : (
-                          <p className="mt-1 font-mono text-xs text-primary flex items-center gap-1">
+                          <a
+                            href={getProgramUrl(PASSMEET_V1_PROGRAM_ID)}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="mt-1 font-mono text-xs text-primary hover:underline flex items-center gap-1"
+                          >
                             <ShieldCheck className="h-3 w-3" />
-                            On-Chain Record
-                          </p>
+                            View on Explorer
+                            <ExternalLink className="h-3 w-3" />
+                          </a>
                         )}
                       </div>
                     </div>

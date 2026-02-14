@@ -8,3 +8,13 @@ export const PROGRAM_IDS = [
   PASSMEET_V1_PROGRAM_ID,
   PASSMEET_SUBS_PROGRAM_ID,
 ];
+
+export const EXPLORER_BASE = "https://explorer.provable.com/testnet";
+
+export function getTransactionUrl(txHash: string): string {
+  return `${EXPLORER_BASE}/transaction/${txHash}`;
+}
+
+export function getProgramUrl(programId: string): string {
+  return `${EXPLORER_BASE}/program/${programId}`;
+}

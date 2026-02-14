@@ -14,18 +14,20 @@ import {
   XCircle,
   Camera,
   ChevronRight,
-  Wallet
+  Wallet,
+  ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { usePassMeet, Ticket } from "@/context/PassMeetContext";
+import { getTransactionUrl } from "@/lib/aleo";
 
 interface VerificationData {
   eventId: string;
   eventName: string;
   timestamp: string;
   network: string;
-  proofId: string;
+  txHash: string;
 }
 
 export default function GatePage() {
@@ -63,7 +65,7 @@ export default function GatePage() {
           eventName: ticket.eventName,
           timestamp: new Date().toLocaleTimeString(),
           network: "Aleo Testnet",
-          proofId: txId.slice(0, 16)
+          txHash: txId
         });
         setStatus("success");
         toast.success("ZK-Proof Verified! Access Granted.");
@@ -232,7 +234,15 @@ export default function GatePage() {
                     </div>
                     <div className="flex justify-between items-center border-b border-white/5 pb-3">
                       <span className="text-zinc-500 text-sm uppercase font-bold tracking-wider">Transaction</span>
-                      <span className="text-primary font-mono text-xs">{verificationData?.proofId}...</span>
+                      <a
+                        href={verificationData?.txHash ? getTransactionUrl(verificationData.txHash) : "#"}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        className="text-primary font-mono text-xs hover:underline flex items-center gap-1"
+                      >
+                        {verificationData?.txHash?.slice(0, 16)}...
+                        <ExternalLink className="h-3 w-3" />
+                      </a>
                     </div>
                     <div className="flex justify-between items-center">
                       <span className="text-zinc-500 text-sm uppercase font-bold tracking-wider">Privacy Mode</span>

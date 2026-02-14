@@ -11,6 +11,7 @@ import { Plus, Users, Calendar, Wallet, CheckCircle2, AlertCircle, Loader2, Refr
 import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
 import { Badge } from "@/components/ui/badge";
+import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
 
 export default function OrganizerPage() {
   const { publicKey } = useWallet();
@@ -51,7 +52,7 @@ export default function OrganizerPage() {
           description: `Transaction: ${txHash.slice(0, 16)}...`,
           action: {
             label: "View",
-            onClick: () => window.open(`https://explorer.provable.com/testnet/transaction/${txHash}`, "_blank")
+            onClick: () => window.open(getTransactionUrl(txHash), "_blank")
           }
         });
         setEventName("");
@@ -269,7 +270,7 @@ export default function OrganizerPage() {
                         <span>On-chain</span>
                       </div>
                       <a
-                        href="https://explorer.provable.com/testnet/program/passmeet_v1_7788.aleo"
+                        href={getProgramUrl(PASSMEET_V1_PROGRAM_ID)}
                         target="_blank"
                         rel="noopener noreferrer"
                         className="text-xs text-zinc-500 hover:text-primary flex items-center gap-1"

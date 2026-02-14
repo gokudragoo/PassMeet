@@ -20,7 +20,7 @@ import {
 } from "lucide-react";
 import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
-import { PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
+import { PASSMEET_SUBS_PROGRAM_ID, getTransactionUrl, getProgramUrl } from "@/lib/aleo";
 import { getSubscription } from "@/lib/aleo-subs-rpc";
 
 const TIER_NAMES: Record<number, string> = {
@@ -174,7 +174,7 @@ export default function SubscriptionPage() {
           description: `Transaction: ${txHash.slice(0, 16)}...`,
           action: {
             label: "View",
-            onClick: () => window.open(`https://explorer.provable.com/testnet/transaction/${txHash}`, "_blank")
+            onClick: () => window.open(getTransactionUrl(txHash), "_blank")
           }
         });
       } else {
@@ -277,7 +277,7 @@ export default function SubscriptionPage() {
 
       <div className="mt-16 text-center">
         <a
-          href="https://explorer.provable.com/testnet/program/passmeet_subs_7788.aleo"
+          href={getProgramUrl(PASSMEET_SUBS_PROGRAM_ID)}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 text-sm text-zinc-500 hover:text-primary transition-colors"
