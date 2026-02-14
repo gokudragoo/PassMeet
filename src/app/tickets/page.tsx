@@ -113,7 +113,18 @@ export default function TicketsPage() {
         errorMessage =
           "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits. Try splitting your balance or getting more testnet tokens.";
       }
-      toast.error(errorMessage);
+      const isWalletNotSynced = errorMessage.toLowerCase().includes("wallet has not synced");
+      toast.error(errorMessage, {
+        ...(isWalletNotSynced && {
+          action: {
+            label: "Try Refresh",
+            onClick: async () => {
+              await refreshTickets();
+              handleGenerateProof(ticket);
+            },
+          },
+        }),
+      });
     } finally {
       setLoading(null);
     }

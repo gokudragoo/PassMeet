@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from "react";
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
 import { getEventCounter, getEvent } from "@/lib/aleo-rpc";
@@ -157,6 +157,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const [isLoading, setIsLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
+  const pendingOptimisticTicketRef = useRef<{ address: string; ticket: Ticket } | null>(null);
 
   // ---- Authentication ----
   const authenticateWithSignature = useCallback(async (): Promise<boolean> => {
@@ -378,8 +379,18 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const optimisticOnly = prev.filter(
           (t) => !t.recordString && !walletKeys.has(`${t.eventId}_${t.ticketId}`)
         );
-        const merged = [...tickets, ...optimisticOnly];
-        LOG("refreshTickets: done", { fromWallet: tickets.length, optimistic: optimisticOnly.length, total: merged.length });
+        let fromRef: Ticket[] = [];
+        const pending = pendingOptimisticTicketRef.current;
+        if (pending && pending.address === address) {
+          const key = `${pending.ticket.eventId}_${pending.ticket.ticketId}`;
+          if (walletKeys.has(key)) {
+            pendingOptimisticTicketRef.current = null;
+          } else {
+            fromRef = [pending.ticket];
+          }
+        }
+        const merged = [...tickets, ...fromRef, ...optimisticOnly];
+        LOG("refreshTickets: done", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
         return merged;
       });
       return tickets.length;
@@ -529,9 +540,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           const exists = prev.some((t) => t.eventId === optimisticTicket.eventId && t.ticketId === optimisticTicket.ticketId);
           return exists ? prev : [...prev, optimisticTicket];
         });
+        pendingOptimisticTicketRef.current = address ? { address, ticket: optimisticTicket } : null;
         LOG("buyTicket: optimistic ticket added", { eventId: eventIdNum, ticketId: nextTicketId });
 
         await refreshEvents({ silent: true });
+        await new Promise((r) => setTimeout(r, 100));
         for (let attempt = 0; attempt < 6; attempt++) {
           const count = await refreshTickets({ silent: true });
           LOG("buyTicket: refreshTickets attempt", { attempt, count });
@@ -654,6 +667,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   // ---- Mount / wallet change ----
   useEffect(() => {
     if (address) {
+      setMyTickets([]);
+      pendingOptimisticTicketRef.current = null;
       LOG("wallet connected: refreshing data", { address: address.slice(0, 12) + "..." });
       const stored = localStorage.getItem("passmeet_auth");
       if (stored) {
