@@ -395,9 +395,9 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       });
       return tickets.length;
     } catch (error) {
-      LOG("refreshTickets: error", error);
-      console.error("Failed to refresh tickets:", error);
-      setMyTickets([]);
+      const err = error as Error;
+      LOG("refreshTickets: error", { message: err?.message, stack: err?.stack });
+      console.error("[PassMeet] refreshTickets: error", err?.message, err?.stack ?? error);
       return 0;
     } finally {
       if (!silent) setIsDataLoading(false);

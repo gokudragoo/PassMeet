@@ -131,8 +131,16 @@ export default function TicketsPage() {
   };
 
   const handleRefresh = async () => {
-    await Promise.all([refreshEvents(), refreshTickets()]);
-    toast.success("Data refreshed");
+    console.log("[PassMeet] handleRefresh: start");
+    try {
+      await Promise.all([refreshEvents(), refreshTickets()]);
+      console.log("[PassMeet] handleRefresh: success");
+      toast.success("Data refreshed");
+    } catch (error) {
+      const err = error as Error;
+      console.error("[PassMeet] handleRefresh: error", err?.message, err?.stack ?? error);
+      toast.error(err?.message ?? "Refresh failed");
+    }
   };
 
   return (
