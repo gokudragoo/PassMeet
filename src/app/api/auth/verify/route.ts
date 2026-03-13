@@ -69,14 +69,14 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Invalid signature encoding" }, { status: 400 });
     }
 
-    let signature: InstanceType<typeof Signature>;
+    let signature: ReturnType<typeof Signature.fromBytesLe>;
     try {
       signature = Signature.fromBytesLe(signatureBytes);
     } catch {
       return NextResponse.json({ error: "Invalid signature bytes" }, { status: 400 });
     }
 
-    let aleoAddress: InstanceType<typeof Address>;
+    let aleoAddress: ReturnType<typeof Address.from_string>;
     try {
       aleoAddress = Address.from_string(address);
     } catch {
