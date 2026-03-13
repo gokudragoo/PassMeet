@@ -60,7 +60,15 @@ interface PassMeetContextType {
   isDataLoading: boolean;
   isAuthenticated: boolean;
   authenticateWithSignature: () => Promise<boolean>;
-  createEvent: (name: string, capacity: number, priceCredits: number, priceUsdcx: number, priceUsad: number, eventDate: string, eventLocation: string) => Promise<string | null>;
+  createEvent: (
+    name: string,
+    capacity: number,
+    priceCredits: number,
+    priceUsdcx: number,
+    priceUsad: number,
+    eventDate: string,
+    eventLocation: string
+  ) => Promise<{ txHash: string; eventId: string; metadataSaved: boolean } | null>;
   buyTicket: (event: Event, rail?: PaymentRail) => Promise<string | null>;
   verifyEntry: (ticket: Ticket) => Promise<string | null>;
   refreshEvents: (opts?: { silent?: boolean }) => Promise<void>;
@@ -527,7 +535,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     priceUsad: number,
     eventDate: string,
     eventLocation: string
-  ): Promise<string | null> => {
+  ): Promise<{ txHash: string; eventId: string; metadataSaved: boolean } | null> => {
     if (!address || !executeTransaction) return null;
 
     LOG("createEvent: starting", { name, capacity, priceCredits, priceUsdcx, priceUsad, eventDate, eventLocation });

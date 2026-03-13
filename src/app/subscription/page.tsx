@@ -405,73 +405,151 @@ export default function SubscriptionPage() {
         </p>
       </div>
 
-      <div className="grid gap-8 md:grid-cols-3">
-        {tiers.map((tier) => (
-          <motion.div
-            key={tier.name}
-            whileHover={{ y: -10 }}
-            className={`relative flex flex-col rounded-3xl border ${
-              tier.highlight 
-                ? "border-primary bg-primary/5 shadow-[0_0_30px_rgba(29,185,84,0.1)]" 
-                : "border-white/10 bg-white/5"
-            } p-8`}
-          >
-            {tier.highlight && (
-              <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary px-4 py-1 rounded-full text-black text-xs font-bold uppercase tracking-wider">
-                Most Popular
-              </div>
-            )}
-            
-            <div className="mb-8 flex items-center gap-4">
-              <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tier.highlight ? "bg-primary text-black" : "bg-white/10 text-white"}`}>
-                <tier.icon className="h-6 w-6" />
-              </div>
-              <div>
-                <h3 className="text-xl font-bold text-white">{tier.name}</h3>
-                <p className="text-sm text-muted-foreground">{tier.description}</p>
-              </div>
-            </div>
-
-            <div className="mb-8">
-              <span className="text-5xl font-bold text-white">{tier.price}</span>
-              <span className="ml-2 text-muted-foreground">{tier.priceLabel ?? "Aleo / mo"}</span>
-            </div>
-
-            <div className="mb-8 space-y-4 flex-1">
-              {tier.features.map((feature) => (
-                <div key={feature} className="flex items-center gap-3 text-sm text-zinc-300">
-                  <div className={`flex h-5 w-5 items-center justify-center rounded-full ${tier.highlight ? "bg-primary/20 text-primary" : "bg-white/10 text-white"}`}>
-                    <Check className="h-3 w-3" />
-                  </div>
-                  {feature}
-                </div>
-              ))}
-            </div>
-
+      <div className="mb-10 rounded-3xl border border-white/10 bg-white/5 p-6">
+        <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <p className="text-sm font-bold text-white">Contract Status</p>
+            <p className="text-xs text-zinc-400">
+              {subsConfig.loading
+                ? "Checking subscription contract config..."
+                : subsConfig.treasury
+                  ? `Treasury: ${subsConfig.treasury.slice(0, 10)}...${subsConfig.treasury.slice(-4)}`
+                  : "Not configured yet (admin must configure treasury + token IDs)."}
+              {latestHeight != null ? ` · Latest height: ${latestHeight}` : ""}
+            </p>
+          </div>
+          {!subsConfig.treasury && (
             <Button
-              onClick={() => handleSubscribe(tier)}
-              disabled={loading !== null || currentTier === tier.name || !address}
-              className={`w-full rounded-full h-12 font-bold transition-all ${
-                tier.highlight 
-                  ? "bg-primary text-black hover:bg-primary/90" 
-                  : "border-white/20 bg-white/10 text-white hover:bg-white/20"
-              }`}
+              type="button"
+              variant="outline"
+              onClick={handleConfigureSubscriptions}
+              disabled={!address || !isAuthenticated || configuring || subsConfig.loading}
+              className="border-primary/30 text-primary hover:bg-primary/10"
             >
-              {loading === tier.name ? (
-                <Loader2 className="h-5 w-5 animate-spin" />
-              ) : !address ? (
-                <>
-                  <Wallet className="mr-2 h-4 w-4" />
-                  Connect Wallet
-                </>
-              ) : currentTier === tier.name ? (
-                "Active Plan"
-              ) : (
-                tier.cta
-              )}
+              {configuring ? <Loader2 className="h-4 w-4 animate-spin" /> : "Configure Subscriptions"}
             </Button>
-          </motion.div>
-        ))}
+          )}
+        </div>
+        {(!envUsdcx || !envUsad) && (
+          <p className="mt-3 text-xs text-yellow-400/90">
+            Missing env token IDs. Set `NEXT_PUBLIC_USDCX_TOKEN_ID` and `NEXT_PUBLIC_USAD_TOKEN_ID` to enable token payments.
+          </p>
+        )}
+      </div>
+
+      <div className="grid gap-8 md:grid-cols-3">
+        {tiers.map((tier) => {
+          const isFreeTier = tier.id === 0;
+          const rail: PaymentRail = selectedRailByTier[tier.id] ?? "credits";
+          const microPrice = isFreeTier ? 0 : (SUB_PRICES_MICRO[tier.id]?.[rail] ?? 0);
+          const railOk = isFreeTier ? true : railConfigured(rail);
+          const subsOk = isFreeTier ? true : !!subsConfig.treasury;
+
+          const buttonDisabled =
+            loading !== null ||
+            currentTier === tier.name ||
+            !address ||
+            !isAuthenticated ||
+            (!isFreeTier && (!subsOk || !railOk));
+
+          return (
+            <motion.div
+              key={tier.name}
+              whileHover={{ y: -10 }}
+              className={`relative flex flex-col rounded-3xl border ${
+                tier.highlight
+                  ? "border-primary bg-primary/5 shadow-[0_0_30px_rgba(29,185,84,0.1)]"
+                  : "border-white/10 bg-white/5"
+              } p-8`}
+            >
+              {tier.highlight && (
+                <div className="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-primary px-4 py-1 rounded-full text-black text-xs font-bold uppercase tracking-wider">
+                  Most Popular
+                </div>
+              )}
+
+              <div className="mb-8 flex items-center gap-4">
+                <div className={`flex h-12 w-12 items-center justify-center rounded-2xl ${tier.highlight ? "bg-primary text-black" : "bg-white/10 text-white"}`}>
+                  <tier.icon className="h-6 w-6" />
+                </div>
+                <div>
+                  <h3 className="text-xl font-bold text-white">{tier.name}</h3>
+                  <p className="text-sm text-muted-foreground">{tier.description}</p>
+                </div>
+              </div>
+
+              <div className="mb-6">
+                <span className="text-5xl font-bold text-white">{formatMicro(microPrice)}</span>
+                <span className="ml-2 text-muted-foreground">{isFreeTier ? "Aleo / mo" : `${railLabel(rail)} / period`}</span>
+              </div>
+
+              {!isFreeTier && (
+                <div className="mb-6">
+                  <label className="block text-[11px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
+                    Payment Rail
+                  </label>
+                  <select
+                    value={rail}
+                    onChange={(e) => setSelectedRailByTier((prev) => ({ ...prev, [tier.id]: e.target.value as PaymentRail }))}
+                    className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-primary/50"
+                  >
+                    {(["credits", "usdcx", "usad"] as const).map((r) => (
+                      <option key={r} value={r} disabled={!railConfigured(r)}>
+                        {railLabel(r)} · {formatMicro(SUB_PRICES_MICRO[tier.id]?.[r] ?? 0)}
+                        {!railConfigured(r) ? " (needs config)" : ""}
+                      </option>
+                    ))}
+                  </select>
+                  {!subsOk ? (
+                    <p className="mt-1 text-xs text-yellow-400/90">
+                      Contract not configured yet. An admin must configure treasury + token IDs before paid subscriptions work.
+                    </p>
+                  ) : !railOk ? (
+                    <p className="mt-1 text-xs text-yellow-400/90">
+                      {railLabel(rail)} is not configured on this deployment.
+                    </p>
+                  ) : null}
+                </div>
+              )}
+
+              <div className="mb-8 space-y-4 flex-1">
+                {tier.features.map((feature) => (
+                  <div key={feature} className="flex items-center gap-3 text-sm text-zinc-300">
+                    <div className={`flex h-5 w-5 items-center justify-center rounded-full ${tier.highlight ? "bg-primary/20 text-primary" : "bg-white/10 text-white"}`}>
+                      <Check className="h-3 w-3" />
+                    </div>
+                    {feature}
+                  </div>
+                ))}
+              </div>
+
+              <Button
+                onClick={() => handleSubscribe(tier)}
+                disabled={buttonDisabled}
+                className={`w-full rounded-full h-12 font-bold transition-all ${
+                  tier.highlight
+                    ? "bg-primary text-black hover:bg-primary/90"
+                    : "border-white/20 bg-white/10 text-white hover:bg-white/20"
+                }`}
+              >
+                {loading === tier.name ? (
+                  <Loader2 className="h-5 w-5 animate-spin" />
+                ) : !address ? (
+                  <>
+                    <Wallet className="mr-2 h-4 w-4" />
+                    Connect Wallet
+                  </>
+                ) : !isAuthenticated ? (
+                  "Sign to Verify"
+                ) : currentTier === tier.name ? (
+                  "Active Plan"
+                ) : (
+                  tier.cta
+                )}
+              </Button>
+            </motion.div>
+          );
+        })}
       </div>
 
       <div className="mt-16 text-center">
