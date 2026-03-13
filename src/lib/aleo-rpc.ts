@@ -105,15 +105,22 @@ export async function getLatestBlockHeight(): Promise<number | null> {
     const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/block/height/latest`;
     const res = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
     if (!res.ok) return null;
-    const data = (await res.json().catch(() => null)) as unknown;
-    if (typeof data === "number") return data;
-    if (typeof data === "string") {
-      const n = parseInt(data, 10);
-      return Number.isFinite(n) ? n : null;
+
+    const text = await res.text();
+    try {
+      const data = JSON.parse(text) as unknown;
+      if (typeof data === "number") return data;
+      if (typeof data === "string") {
+        const n = parseInt(data, 10);
+        return Number.isFinite(n) ? n : null;
+      }
+    } catch {
+      // fall through
     }
-    const txt = await res.text().catch(() => "");
-    const n = parseInt(txt.replace(/\D/g, ""), 10);
-    return Number.isFinite(n) ? n : null;
+
+    const n = parseInt(text.replace(/\D/g, ""), 10);
+    if (Number.isFinite(n)) return n;
+    return null;
   } catch {
     return null;
   }

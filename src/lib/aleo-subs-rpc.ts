@@ -8,9 +8,9 @@ export interface OnChainSubscription {
   end_height: number;
 }
 
-async function fetchSubsMappingValue(key: string): Promise<string | null> {
+async function fetchSubsMappingValue(mappingName: string, key: string): Promise<string | null> {
   try {
-    const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/program/${PASSMEET_SUBS_PROGRAM_ID}/mapping/user_subs/${encodeURIComponent(key)}`;
+    const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/program/${PASSMEET_SUBS_PROGRAM_ID}/mapping/${mappingName}/${encodeURIComponent(key)}`;
     const response = await fetch(url, {
       cache: "no-store",
       headers: { Accept: "application/json" },
@@ -41,7 +41,7 @@ async function fetchSubsMappingValue(key: string): Promise<string | null> {
         method: "getMappingValue",
         params: {
           program_id: PASSMEET_SUBS_PROGRAM_ID,
-          mapping_name: "user_subs",
+          mapping_name: mappingName,
           key,
         },
       }),
@@ -63,7 +63,7 @@ async function fetchSubsMappingValue(key: string): Promise<string | null> {
 export async function getSubscription(
   address: string
 ): Promise<OnChainSubscription | null> {
-  const text = await fetchSubsMappingValue(address);
+  const text = await fetchSubsMappingValue("user_subs", address);
   if (!text) return null;
 
   const tierMatch = text.match(/tier:\s*(\d+)u8/);
@@ -78,4 +78,18 @@ export async function getSubscription(
     start_height: startHeightMatch ? parseInt(startHeightMatch[1], 10) : 0,
     end_height: endHeightMatch ? parseInt(endHeightMatch[1], 10) : (legacyExpiryMatch ? parseInt(legacyExpiryMatch[1], 10) : 0),
   };
+}
+
+export async function getSubscriptionTreasury(): Promise<string | null> {
+  const text = await fetchSubsMappingValue("treasury", "0u8");
+  if (!text) return null;
+  const m = text.match(/(aleo1[a-z0-9]+)/);
+  return m ? m[1] : null;
+}
+
+export async function getSubscriptionTokenId(key: 0 | 1): Promise<string | null> {
+  const text = await fetchSubsMappingValue("token_ids", `${key}u8`);
+  if (!text) return null;
+  const m = text.match(/(\d+)field/);
+  return m ? `${m[1]}field` : null;
 }
