@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { cookies } from "next/headers";
 import { saveEventMetadata, getAllEvents, EventMetadata } from "@/lib/pinata";
+import { getPassMeetAuthSecret, PASSMEET_SESSION_COOKIE, verifyToken, type SignedTokenPayload } from "@/lib/auth";
 
 const LOG = (msg: string, data?: unknown) => {
   console.log(`[PassMeet API] ${msg}`, data ?? "");
@@ -7,6 +9,22 @@ const LOG = (msg: string, data?: unknown) => {
 
 let eventsCache: { events: EventMetadata[]; ts: number } | null = null;
 const CACHE_TTL_MS = 30_000; // 30 seconds
+
+type SessionPayload = SignedTokenPayload & { address: string };
+
+async function requireSession(): Promise<{ address: string } | null> {
+  const cookieStore = await cookies();
+  const token = cookieStore.get(PASSMEET_SESSION_COOKIE)?.value ?? null;
+  if (!token) return null;
+  try {
+    const secret = getPassMeetAuthSecret();
+    const res = verifyToken<SessionPayload>(token, secret);
+    if ("error" in res || !res.payload.address) return null;
+    return { address: res.payload.address };
+  } catch {
+    return null;
+  }
+}
 
 export async function GET() {
   try {
@@ -29,6 +47,10 @@ export async function GET() {
 
 export async function POST(request: Request) {
   try {
+    const session = await requireSession();
+    if (!session) {
+      return NextResponse.json({ success: false, error: "Unauthorized. Sign in to create events." }, { status: 401 });
+    }
     const body = await request.json();
     LOG("POST /api/events: saving metadata", { id: body.id, name: body.name });
 

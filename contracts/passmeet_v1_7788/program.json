@@ -3,5 +3,16 @@
   "version": "1.0.0",
   "description": "PassMeet Event Management and Ticket Verification",
   "license": "MIT",
-  "dependencies": []
+  "dependencies": [
+    {
+      "name": "credits.aleo",
+      "location": "network",
+      "network": "testnet"
+    },
+    {
+      "name": "token_registry.aleo",
+      "location": "network",
+      "network": "testnet"
+    }
+  ]
 }

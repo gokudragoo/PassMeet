@@ -1,364 +1,187 @@
-# PassMeet - Privacy-First Event Ticketing on Aleo
+# PassMeet (Aleo Testnet)
 
-<div align="center">
+PassMeet is a privacy-first event ticketing and gate verification app built on Aleo. Tickets are private Aleo records, and entry is verified on-chain with zero-knowledge proofs plus one-time nullifiers to prevent replay.
 
-![PassMeet](https://img.shields.io/badge/PassMeet-Aleo%20Testnet-1DB954?style=for-the-badge)
-![Leo](https://img.shields.io/badge/Leo-3.4.0-blue?style=for-the-badge)
-![Next.js](https://img.shields.io/badge/Next.js-15-black?style=for-the-badge)
+This repo includes:
+- A Next.js 15 app (frontend + API routes)
+- Two Aleo programs (events/tickets and subscriptions)
+- IPFS metadata persistence (Pinata, optional but recommended)
+- First-class payment rails: `credits.aleo`, USDCx, and USAD (via `token_registry.aleo`)
 
-**The world's first privacy-first event ticketing platform powered by Zero-Knowledge proofs.**
+## Update
 
-[Live Demo](https://passmeet-chi.vercel.app/) | [Demo Video](https://youtu.be/lnh7xxyln7w) | [Explorer](https://explorer.provable.com/testnet/program/passmeet_v1_7788.aleo)
+Summary of the production-hardening work shipped in the web app:
+- Wallet auth is now real server-verified signature sessions (HttpOnly cookies), no fake localStorage auth.
+- Transactions use explicit confirmation states (submitted/confirmed/timed_out/failed/rejected) to prevent phantom success.
+- Events support per-rail pricing on-chain and atomic paid purchases for `credits.aleo`, USDCx, and USAD.
+- Subscriptions are paid/atomic and validity is derived from on-chain block height (no browser-time or localStorage truth).
+- Metadata writes are explicit: the UI surfaces IPFS/Pinata failures and keeps events discoverable from on-chain data with placeholders.
+- Organizer and attendee UI now include payment-rail selection/config, and encoding issues like `Â·` separators were removed.
+- Quality gates are clean: `npm run lint`, `npm run test:run`, `npm run build`.
 
-</div>
+## Name, Description, Problem Being Solved
 
----
+### Name
+PassMeet
 
-## 1. Project Overview
+### Description
+Privacy-preserving event creation, ticket purchase/mint, and gate verification on Aleo.
 
-### Name & Description
+### Problem
+Traditional ticketing systems leak attendee identity and purchase history, rely on centralized databases, and use QR codes that are easy to copy. PassMeet moves ownership and validity checks on-chain while keeping ticket ownership private.
 
-**PassMeet** is a fully on-chain, privacy-preserving event ticketing and access control platform built on Aleo. Attendees purchase tickets and verify entry at event gates **without revealing wallet addresses or transaction history** — powered by Zero-Knowledge Proofs (ZKP).
+## Why Privacy Matters (For Ticketing)
 
-### Problem Being Solved
+- Attendees should be able to prove "I have a valid ticket" without revealing their wallet address or their full transaction history to an organizer, venue staff, or an app backend.
+- Organizers should be able to prevent ticket reuse (replay) without maintaining a central list of attendees.
+- Reducing off-chain PII and central databases reduces breach risk and surveillance risk.
 
-- **Traditional ticketing** exposes attendee identities, purchase history, and wallet addresses to organizers and third parties.
-- **Centralized platforms** hold sensitive data, enabling profiling, resale tracking, and privacy breaches.
-- **QR-based systems** are easily forged and offer no cryptographic guarantees.
+## Architecture Overview
 
-PassMeet solves this by making tickets **private by default**, entry verification **anonymous**, and all state **on-chain** — no central database.
+### Components
 
-### Why Privacy Matters for This Use Case
+- Next.js App Router UI
+  - Organizer dashboard: create events, set per-rail prices
+  - Tickets: mint free tickets or purchase paid tickets
+  - Gate: verify entry on-chain
+  - Subscription: paid tiers with on-chain validity
+- Next.js API routes
+  - Auth: server-verified wallet signature sessions via HttpOnly cookies
+  - Events metadata: IPFS persistence and index management (Pinata when configured)
+- Aleo programs
+  - `passmeet_v1_7788.aleo`: events, tickets, payment-atomic purchase, verify-entry nullifiers
+  - `passmeet_subs_7788.aleo`: subscriptions, payment-atomic subscribe, validity by block height
+- Payments
+  - `credits.aleo` for private credits transfers
+  - `token_registry.aleo` for USDCx/USAD tokens using a single payment primitive
+- RPC provider
+  - Default: Provable Explorer API (`NEXT_PUBLIC_ALEO_RPC_URL`)
+- Wallet extensions
+  - Shield, Leo, Puzzle, Fox (wallet UX and confirmation speed can differ)
 
-| Concern | How PassMeet Addresses It |
-|---------|---------------------------|
-| **Identity exposure** | Organizers see only "valid ticket" at the gate, never wallet or identity |
-| **Purchase history** | Ticket records are private; no one can trace which events you attended |
-| **Resale / scalping** | Tickets are cryptographically bound; selective disclosure possible for future features |
-| **Data breaches** | No central database of attendees; state lives on Aleo |
-| **Surveillance** | Zero-knowledge proofs prove validity without revealing anything else |
+### High-Level Diagram
 
-### Product-Market Fit (PMF) & Go-To-Market (GTM) Plan
-
-| PMF | Target: Privacy-conscious event organizers and attendees (conferences, meetups, exclusive events). Value: Trustless, private ticketing with ZK verification. |
-|-----|-------------------------------------------------------------------------------------------------------------------------------------------------------------|
-| **GTM** | 1) Partner with Aleo ecosystem events for pilot; 2) Integrate with existing event tools (Calendly, Luma); 3) Launch on mainnet post-testnet validation; 4) Community-driven adoption via hackathons and grants. |
-
----
-
-## 2. Working Demo
-
-| Requirement | Status |
-|-------------|--------|
-| **Deployed on Aleo Testnet** | ✅ Live at [passmeet-chi.vercel.app](https://passmeet-chi.vercel.app/) — [Watch Demo](https://youtu.be/lnh7xxyln7w) |
-| **Functional Leo Smart Contracts** | ✅ `passmeet_v1_7788.aleo` (events, tickets, verify_entry) + `passmeet_subs_7788.aleo` (subscriptions) |
-| **Basic UI Demonstrating Core Features** | ✅ Landing, Organizer, My Tickets, Gate, Subscription — full flow works |
-
-**Core flows verified:**
-- Create event → Mint ticket → Generate ZK proof → Verify entry on-chain
-- Leo Wallet, Puzzle Wallet, Fox Wallet supported
-
-## Deployed Contracts (Aleo Testnet)
-
-| Contract | Program ID | Transaction ID |
-|----------|-----------|----------------|
-| **Main Event Contract** | `passmeet_v1_7788.aleo` | `at1lkxmqgcxqy8df6tqsue26pn9qpq49pvtep6c62sm4dmjxq7y6cxsr6uuxs` |
-| **Subscription Contract** | `passmeet_subs_7788.aleo` | `at16s6m4frqkd597tpmvayjpl97ul9es5n8e77kpr6t86muwc3mf5psjthker` |
-
-> **Network:** Aleo Testnet | **RPC:** `https://api.explorer.provable.com/v2`
-
-## Key Features
-
-| Feature | Description |
-|---------|-------------|
-| **On-Chain Events** | All events are created and managed directly on the Aleo blockchain |
-| **Private Ticket Minting** | Tickets are minted as private Aleo records. Ownership is cryptographically hidden |
-| **ZK-Proof Entry** | Gate verification uses one-time Zero-Knowledge proofs. Organizers only see validity, never identity |
-| **Nullifier-Based Anti-Replay** | Each ticket can only be used once, enforced by on-chain nullifiers |
-| **Wallet Signature Auth** | Users sign a message to verify identity without exposing private keys |
-| **Subscription Tiers** | On-chain subscription model for premium organizer features |
-| **IPFS Storage** | Event metadata stored on Pinata IPFS for decentralized data availability |
-
-
-## 3. Technical Documentation
-
-| Requirement | Location |
-|-------------|----------|
-| **GitHub Repository** | *(Add your repo URL — e.g. `https://github.com/your-org/PassMeet`)* |
-| **README** | This file — setup, env vars, quick start, architecture |
-| **Architecture Overview** | See [Architecture](#architecture) section below |
-| **Privacy Model** | See [Privacy Guarantees](#privacy-guarantees) and [Record Format & Wallet Integration](#record-format--wallet-integration) |
-
----
-
-## 4. Progress Changelog (Wave 2+)
-
-### What We Built Since Last Submission
-
-| Area | Improvements |
-|------|--------------|
-| **Minting** | Ticket minting flow refined; records handled correctly with Leo/Puzzle wallets |
-| **Organizer** | Event creation and dashboard organization improved; IPFS metadata caching (60s) for faster loads |
-| **Tickets** | Tickets persist per wallet in `localStorage`; survive refresh; isolated per address |
-| **Gate Verification** | ZK-proof generation fixed; record format (ciphertext/plaintext) handled; `verify_entry` succeeds |
-| **Wallet** | Decrypt permission set to `OnChainHistory` for record access; retries (3x) on `requestRecords`; clear NOT_GRANTED messaging |
-| **Subscription** | UI price aligned with actual charge (0.1 ALEO tx fee); no misleading 15/50 ALEO display |
-| **Network** | RPC/Explorer paths use `ALEO_NETWORK` (testnet/mainnet) |
-| **UX** | Gate page: dynamic network label, error UX with "Refresh Tickets & Try Again"; auto-refresh on load |
-| **Production** | Favicon & Apple icon; Open Graph & Twitter metadata; 404 page; loading states |
-| **Payments** | Paid events: credits.aleo `transfer_private` to organizer before mint; two-step flow (pay then mint) |
-
-### Feedback Incorporated
-
-- **Record format errors** — Fixed "Input is not a valid record type" by using ciphertext when present and correct owner format
-- **NOT_GRANTED** — Switched to `DecryptPermission.OnChainHistory`; added clear messaging for users to disconnect/reconnect
-- **Tickets disappearing on refresh** — Keep `localStorage` tickets when wallet returns empty; merge with wallet records
-- **Subscription price mismatch** — UI now shows 0.1 ALEO (actual tx fee) instead of misleading 15/50 ALEO
-
-
-
-
-### Next Wave Goals
-
-- [ ] Subscription payment flow (15/50 ALEO plan pricing in contract) update the contract
-- [ ] QR code generator for gate verification
-- [ ] Event discovery and search (filter by date, location)
-- [ ] Organizer analytics (aggregate stats without identity exposure)
-- [ ] USDCx / USAD token payment option (requires token contract integration)
-
-## Tech Stack
-
-| Category | Technology |
-|----------|------------|
-| **Blockchain** | Aleo Testnet |
-| **Smart Contracts** | Leo 3.4.0 |
-| **Frontend** | Next.js 15 (App Router), TypeScript, Tailwind CSS |
-| **Wallet Integration** | Leo Wallet, Puzzle Wallet, Fox Wallet (aleo-adapters) |
-| **Storage** | Pinata IPFS |
-| **Animations** | Framer Motion |
-| **UI Components** | shadcn/ui, Lucide React icons |
-
-## Smart Contracts
-
-Located in `contracts/`:
-
-### passmeet_v1_7788.aleo
-```
-create_event(capacity, price)  -> Create events on-chain
-mint_ticket(event_id, ticket_id) -> Mint private ticket records
-verify_entry(ticket)           -> Gate verification using nullifiers
+```mermaid
+flowchart LR
+  U["User (Organizer or Attendee)"] --> W["Wallet Extension"]
+  U --> UI["Next.js UI"]
+  UI --> API["Next.js API Routes"]
+  API --> IPFS["Pinata / IPFS (metadata)"]
+  W --> RPC["Aleo RPC (Provable)"]
+  RPC --> A1["passmeet_v1_7788.aleo"]
+  RPC --> A2["passmeet_subs_7788.aleo"]
+  A1 --> TR["token_registry.aleo"]
+  A2 --> TR
 ```
 
-### passmeet_subs_7788.aleo
-```
-subscribe(tier, duration)      -> Subscribe to premium tiers
-```
+### Data Flow (Core Paths)
 
-## Application Flow
+- Create event
+  - UI -> wallet executes `create_event(capacity, price_credits, price_usdcx, price_usad)` on `passmeet_v1_7788.aleo`
+  - UI -> `POST /api/events` writes metadata to IPFS (Pinata) and updates the index
+  - The UI only claims "created" once on-chain succeeds; metadata failures are surfaced and the event remains discoverable from on-chain data with placeholder metadata
+- Buy ticket / mint ticket (atomic)
+  - Free event: `mint_free_ticket(event_id, ticket_id)`
+  - Paid with credits: `purchase_ticket_with_credits(event_id, ticket_id, credits_record)`
+  - Paid with tokens: `purchase_ticket(event_id, ticket_id, token_registry.aleo/Token)` (USDCx/USAD)
+  - Payment transfer and ticket mint happen in one transaction flow so stale `ticket_id` / sold-out events fail without charging and without minting
+- Gate verify
+  - Wallet executes `verify_entry(ticket)` which sets a one-time nullifier on-chain
+- Subscribe
+  - `subscribe_with_credits(tier, credits_record)` or `subscribe(tier, token_record)` on `passmeet_subs_7788.aleo`
+  - Contract stores `start_height` / `end_height` using `block.height` (no browser-time truth)
 
-```
-Connect Wallet -> Sign Message -> Create/Browse Events -> Mint Ticket -> Generate ZK Proof -> Verify Entry
-```
+## Privacy Model (What Is Private, What Is Public)
 
-1. **Connect Wallet** - Leo Wallet, Puzzle Wallet, or Fox Wallet
-2. **Sign to Verify** - Authenticate via wallet signature
-3. **Organizer Dashboard** - Create events with capacity and price
-4. **Attendee Dashboard** - Browse events and mint private tickets
-5. **Gate Scanner** - Generate ZK-proof and verify on-chain
+### Private by default
+- Ticket ownership: tickets are Aleo records held in the user's wallet.
+- Gate verification: the chain learns "a valid ticket was used and the nullifier is now spent" but ticket ownership is not revealed to the organizer UI or backend.
+- Payments: credits/token transfers are performed privately using Aleo primitives (`credits.aleo` and `token_registry.aleo`).
 
-## Website Pages
+### Public/observable
+- That transactions happened (normal blockchain visibility).
+- Event on-chain state such as capacity, ticket_count, and per-rail prices.
+- Optional event metadata stored on IPFS (name/date/location/image). Avoid putting sensitive attendee data in metadata.
 
-| Page | Route | Purpose |
-|------|-------|---------|
-| **Landing** | `/` | Hero, features, how-it-works, CTA to Get Tickets / Create Event |
-| **Organizer** | `/organizer` | Create events (capacity, price, date, location); requires wallet + auth |
-| **My Tickets** | `/tickets` | Browse events, mint tickets; shows owned tickets with event metadata |
-| **Gate** | `/gate` | Select ticket → Generate ZK proof → `verify_entry` on-chain; shows success/fail + tx link |
-| **Subscription** | `/subscription` | Tier cards (Free, Organizer Pro, Enterprise); `subscribe(tier, duration)` with 0.1 ALEO tx fee |
+### Anti-replay
+- The event program computes a collision-free nullifier based on `(event_id, ticket_id)` and stores it in a mapping so a ticket cannot be verified twice.
 
-## RPC & External Services
+## Production Hardening (Implemented)
 
-| Service | Purpose |
-|---------|---------|
-| **Provable Explorer API** | `ALEO_RPC_URL` — mapping reads (`event_counter`, `events`, `user_subs`) |
-| **testnet3.aleorpc.com** | JSON-RPC fallback for `getMappingValue` when Provable returns null |
-| **Pinata** | IPFS pinning; event metadata; index of event CIDs |
-| **IPFS Gateways** | Pinata, ipfs.io, cloudflare-ipfs, dweb.link (3s timeout per gateway) |
+This repo was hardened to remove demo-style fallbacks and improve reliability end-to-end on Aleo Testnet:
 
-## Quick Start
+- Real wallet auth sessions (server-verified signatures, HttpOnly cookie sessions)
+- Reliable transaction states (no "phantom success" when a tx is still pending)
+- Per-rail on-chain pricing and atomic paid purchase flows for:
+  - `credits.aleo`
+  - USDCx / USAD via `token_registry.aleo`
+- Subscription payments are atomic and validity is based on chain block height
+- Metadata persistence is explicit: if IPFS storage is unavailable, the app does not silently pretend metadata was saved
+- Lint/test/build gates remain green (`npm run lint`, `npm run test:run`, `npm run build`)
+
+## Setup (Local Dev)
+
+### Prerequisites
+- Node.js 18+ (recommend 20)
+- An Aleo-compatible wallet extension (Shield/Leo/Puzzle/Fox)
+
+### Environment Variables
+Copy `.env.example` to `.env.local` and set values:
+
+- `PASSMEET_AUTH_SECRET` (required, min 32 chars)
+- `NEXT_PUBLIC_ALEO_NETWORK` (`testnet` or `mainnet`)
+- `NEXT_PUBLIC_ALEO_RPC_URL`
+- `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID`
+- `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID`
+- `PINATA_JWT` (recommended for durable metadata; without it, metadata writes will fail and the app will show placeholders)
+- Token rails (optional, but if you enable token pricing in the UI they must be configured on-chain too)
+  - `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID` (usually `token_registry.aleo`)
+  - `NEXT_PUBLIC_USDCX_TOKEN_ID` (field literal, e.g. `123...field`)
+  - `NEXT_PUBLIC_USAD_TOKEN_ID` (field literal, e.g. `456...field`)
+
+### Install and Run
 
 ```bash
-# Install dependencies
 npm install
-
-# Run development server
 npm run dev
 ```
 
-Open [http://localhost:3000](http://localhost:3000)
-
-## Environment Variables
-
-```env
-# Pinata IPFS Storage
-PINATA_JWT=your_pinata_jwt_token
-NEXT_PUBLIC_GATEWAY_URL=https://gateway.pinata.cloud
-
-# Aleo Network Configuration
-# Use "testnet" or "mainnet". For mainnet, deploy contracts first and set program IDs.
-NEXT_PUBLIC_ALEO_NETWORK=testnet
-NEXT_PUBLIC_ALEO_RPC_URL=https://api.explorer.provable.com/v2
-
-# Deployed Contract Addresses (testnet by default)
-NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID=passmeet_v1_7788.aleo
-NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID=passmeet_subs_7788.aleo
-```
-
-## Deploy Contracts
-
-Build and deploy Leo contracts. Requires [Leo CLI](https://docs.leo-lang.org/) installed.
+### Quality Gates
 
 ```bash
-# Build contracts (no deploy)
-npm run build:contracts
-
-# Deploy to Aleo testnet (requires funded account)
-npm run deploy:contracts
+npm run lint
+npm run test:run
+npm run build
 ```
 
-Or use the shell scripts directly (bash/WSL):
+## One-Time Admin Configuration (Required for USDCx/USAD)
 
-```bash
-chmod +x scripts/build-leo.sh scripts/deploy-leo.sh
-./scripts/build-leo.sh
-./scripts/deploy-leo.sh
-```
+Token rails require both:
+1. Frontend env vars (so the UI can request the right records), and
+2. On-chain contract configuration (so the contract will accept those token IDs)
 
-## Production Readiness and Payment
+Event program:
+- Call `configure_tokens(usdcx_token_id, usad_token_id)` once (first caller becomes admin).
 
-| Area | Status |
-|------|--------|
-| **Mint** | Retries and longer polling address finicky mint and Leo slowness; Shield users get clearer errors if tx is not submitted. |
-| **Payments** | Paid tickets use **credits.aleo**: the app first runs `transfer_private` to the organizer, then `mint_ticket`. Payment is not inside the passmeet contract because Aleo does not allow one program to call another's state-changing transition. |
-| **Contracts** | Use `npm run build:contracts` and `npm run deploy:contracts`; Leo CLI required. |
-| **USDCx/USAD** | Documented as future work (separate token integration). |
+Subscription program:
+- Call `configure(treasury_address, usdcx_token_id, usad_token_id)` once (first caller becomes admin).
 
-## Production Deployment
+## PMF and GTM (Outline)
 
-| Item | Notes |
-|------|-------|
-| **Favicon & Icons** | `app/icon.tsx` (32×32), `app/apple-icon.tsx` (180×180) — green ticket icon |
-| **Metadata** | Open Graph, Twitter cards, `metadataBase` for canonical URLs |
-| **Error Handling** | `app/error.tsx` (Try Again), `app/not-found.tsx` (404), `app/loading.tsx` (global spinner) |
-| **Env for Prod** | Set `NEXT_PUBLIC_SITE_URL` for correct Open Graph URLs; ensure `PINATA_JWT` is set |
+### Product-Market Fit (PMF) Hypothesis
+- ICP (beachhead): privacy-conscious communities, invite-only events, conferences/meetups that want cryptographic access control without leaking attendee lists.
+- Core value: "prove entry without doxxing yourself" plus on-chain enforcement against reuse.
+- Success metrics: event creation -> purchase -> gate verify conversion, support load per 1k users, wallet completion time, repeat organizer usage.
 
-## Project Structure
+### Go-To-Market (GTM) Plan
+- Phase 1 (Testnet pilots): partner with Aleo ecosystem events and hackathons; ship a repeatable wallet matrix playbook (Shield/Leo/Puzzle/Fox).
+- Phase 2 (Integrations): lightweight export/import with existing event tools (Luma/Calendly-style flows), simple QR-less gate UX, organizer onboarding.
+- Phase 3 (Mainnet launch): paid organizer subscriptions, per-ticket fees, and token rails as default for stable pricing.
+- Distribution: ecosystem grants, community partnerships, ambassadors, and bundling with venue tooling.
 
-```
-contracts/
-├── passmeet_v1_7788/        # Core event/ticket contract
-└── passmeet_subs_7788/      # Subscription contract
-src/
-├── app/
-│   ├── page.tsx             # Landing page
-│   ├── organizer/           # Event creation dashboard
-│   ├── tickets/             # Attendee ticket management
-│   ├── gate/                # ZK-proof verification
-│   └── subscription/        # Premium tier management
-├── components/
-│   ├── AleoWalletProvider   # Multi-wallet support
-│   └── Navbar.tsx           # Navigation
-├── context/
-│   └── PassMeetContext.tsx  # Global on-chain state
-└── lib/
-    ├── aleo.ts              # ALEO_NETWORK, RPC URL, program IDs, EXPLORER_BASE, tx/program URLs
-    ├── aleo-rpc.ts          # getEventCounter, getEvent — Provable + JSON-RPC fallback
-    ├── aleo-subs-rpc.ts     # getSubscription — user_subs mapping
-    ├── pinata.ts            # uploadToIPFS, fetchFromIPFS, saveEventMetadata, getAllEvents
-    └── utils.ts             # cn() and shared utilities
-```
+## Repo Map
 
----
-
-## Architecture
-
-### High-Level Overview
-
-```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│                              PassMeet Frontend                                │
-│  Next.js 15 App Router │ PassMeetContext │ Aleo Wallet Adapters              │
-└─────────────────────────────────────────────────────────────────────────────┘
-         │                           │                           │
-         ▼                           ▼                           ▼
-┌─────────────────┐     ┌─────────────────────┐     ┌─────────────────────────┐
-│  Aleo Blockchain │     │  Pinata IPFS        │     │  Leo / Puzzle / Fox      │
-│  (Testnet)       │     │  (Event Metadata)   │     │  Wallet Extensions       │
-│                  │     │                     │     │                          │
-│ • passmeet_v1    │     │ • Event index CID   │     │ • requestRecords        │
-│ • passmeet_subs  │     │ • Per-event JSON    │     │ • executeTransaction    │
-│ • Provable RPC   │     │ • 3s fetch timeout  │     │ • DecryptPermission      │
-└─────────────────┘     └─────────────────────┘     └─────────────────────────┘
-```
-
-### Data Flow
-
-| Flow | Path |
-|------|------|
-| **Create Event** | Organizer → `create_event` tx → Aleo; metadata → `POST /api/events` → Pinata IPFS; index updated |
-| **Fetch Events** | `getEventCounter()` + `getEvent(id)` (Provable RPC + JSON-RPC fallback) → merge with `GET /api/events` → IPFS metadata |
-| **Mint Ticket** | `executeTransaction(mint_ticket)` → private `Ticket` record → wallet stores; UI shows via `requestRecords` |
-| **Verify Entry** | `requestRecords` → `executeTransaction(verify_entry)` with record ciphertext → nullifier set on-chain |
-| **Subscription** | `executeTransaction(subscribe)` → `user_subs` mapping updated; `getSubscription(address)` reads tier/expiry |
-
-### Frontend Architecture
-
-| Layer | Responsibility |
-|-------|----------------|
-| **Layout** | Root layout, `AleoWalletProvider`, `Navbar`, `Footer`, `Toaster` |
-| **PassMeetContext** | Events, tickets, auth, createEvent, buyTicket, verifyEntry, refresh; localStorage persistence for tickets |
-| **Pages** | `/` (landing), `/organizer`, `/tickets`, `/gate`, `/subscription` |
-| **API Routes** | `GET/POST /api/events` — proxy to Pinata; 60s cache |
-
-### State & Persistence
-
-| Data | Storage | Lifetime |
-|------|---------|----------|
-| `events` | Aleo + IPFS; `PassMeetContext` cache | On-chain permanent; IPFS index; 60s API cache |
-| `myTickets` | Wallet records + `localStorage` under `passmeet_my_tickets_{address}` | Per-wallet; survives refresh when wallet returns empty |
-| `event metadata` | `localStorage` under `passmeet_event_metadata` | Fallback when IPFS slow |
-| `subscription` | Aleo `user_subs` + `localStorage` under `passmeet_subscription` | Per-user |
-
-### Record Format & Wallet Integration
-
-- **Ticket records**: Private Aleo records. `verify_entry` expects either `ciphertext` (starts with `"record1"`) or plaintext with `owner` ending in `.private`.
-- **Decrypt**: `DecryptPermission.OnChainHistory` required so `requestRecords` / `requestRecordPlaintexts` works.
-
-### Caching Strategy
-
-| Layer | TTL / Behavior |
-|-------|----------------|
-| `/api/events` | 60 seconds in-memory |
-| IPFS fetch | 3s timeout; fallbacks: Pinata → ipfs.io → cloudflare-ipfs → dweb.link |
-| Event metadata | `localStorage` fallback; merged with on-chain data |
-
-### IPFS Storage Model
-
-- **Index**: Single JSON `{ events: [cid1, cid2, ...], lastUpdated }` pinned as `passmeet_events_index`.
-- **Per-event**: `{ id, name, date, location, image, organizer, capacity, price }` pinned per event.
-- **Create**: Upload event JSON → update index → re-pin index (unpin old index first).
-
----
-
-## Privacy Guarantees
-
-- Wallet addresses are **never** stored off-chain
-- Ticket ownership is **private** by default
-- Entry verification is **anonymous** - only validity is proven
-- No central database - all state lives on Aleo
- 
-<div align="center">
-
-**Built for Aleo Wavehack**
-
-</div>
+- `src/`: Next.js app + route handlers
+- `contracts/passmeet_v1_7788/`: event + ticket Aleo program
+- `contracts/passmeet_subs_7788/`: subscription Aleo program
+- `.env.example`: environment template

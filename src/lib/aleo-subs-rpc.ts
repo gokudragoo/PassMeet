@@ -1,6 +1,6 @@
 import { ALEO_NETWORK, ALEO_RPC_URL, PASSMEET_SUBS_PROGRAM_ID } from "./aleo";
 
-const ALEO_JSON_RPC = "https://testnet3.aleorpc.com";
+const ALEO_JSON_RPC = process.env.NEXT_PUBLIC_ALEO_JSON_RPC || "https://api.explorer.provable.com/v2";
 
 export interface OnChainSubscription {
   tier: number;

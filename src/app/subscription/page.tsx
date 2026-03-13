@@ -316,7 +316,7 @@ export default function SubscriptionPage() {
           throw new Error(`Insufficient private balance. Need at least ${(required / 1_000_000).toFixed(2).replace(/\\.00$/, "")} Aleo in one credits record.`);
         }
         functionName = "subscribe_with_credits";
-        inputs = [`${tier.id}u8`, toWalletRecordInput(recordItem)];
+        inputs = [`${tier.id}u8`, subsConfig.treasury!, `${microPrice}u64`, toWalletRecordInput(recordItem)];
       } else {
         // token_registry rail
         if (!subsConfig.usdcxId || subsConfig.usdcxId === "0field" || !subsConfig.usadId || subsConfig.usadId === "0field") {
@@ -338,7 +338,7 @@ export default function SubscriptionPage() {
         }
 
         functionName = "subscribe";
-        inputs = [`${tier.id}u8`, toWalletRecordInput(recordItem)];
+        inputs = [`${tier.id}u8`, subsConfig.treasury!, `${microPrice}u128`, toWalletRecordInput(recordItem)];
       }
 
       const result = await executeTransaction({

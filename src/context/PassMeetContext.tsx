@@ -710,7 +710,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
         const creditRecordInput = toWalletRecordInput(recordItem);
         functionName = "purchase_ticket_with_credits";
-        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, creditRecordInput];
+        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, event.organizerAddress, `${priceMicro}u64`, creditRecordInput];
       } else {
         if (!requestRecords) {
           throw new Error("Wallet does not support record requests. Please use Leo, Puzzle, Fox, or Shield wallet.");
@@ -748,7 +748,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
         const tokenRecordInput = toWalletRecordInput(recordItem);
         functionName = "purchase_ticket";
-        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, tokenRecordInput];
+        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, event.organizerAddress, `${price}u128`, tokenRecordInput];
       }
 
       LOG("buyTicket: executing", { eventIdNum, nextTicketId, functionName, rail });
