@@ -13,6 +13,13 @@ export interface OnChainEventInfo {
   price_usad: number;
 }
 
+export async function getConfiguredTokenId(key: 0 | 1): Promise<string | null> {
+  const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "token_ids", `${key}u8`);
+  if (!text) return null;
+  const m = text.match(/(\d+)field/);
+  return m ? `${m[1]}field` : null;
+}
+
 /**
  * Fetches a mapping value via JSON-RPC (getMappingValue).
  * Used as fallback when Provable REST fails.

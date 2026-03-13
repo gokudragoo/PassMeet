@@ -21,6 +21,7 @@ import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
 import { PASSMEET_SUBS_PROGRAM_ID, getTransactionUrl, getProgramUrl } from "@/lib/aleo";
 import { getSubscription } from "@/lib/aleo-subs-rpc";
+import { pollForTxHash, snapshotTxHistory } from "@/lib/walletTx";
 
 const TIER_NAMES: Record<number, string> = {
   0: "Free",
@@ -28,27 +29,8 @@ const TIER_NAMES: Record<number, string> = {
   2: "Enterprise",
 };
 
-function isOnChainTxHash(id: string): boolean {
-  return typeof id === "string" && id.startsWith("at1") && id.length >= 61;
-}
-
-async function pollForTxHash(
-  tempId: string,
-  transactionStatus: (id: string) => Promise<{ status: string; transactionId?: string }>,
-  maxAttempts = 45
-): Promise<string | null> {
-  for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((r) => setTimeout(r, 2000));
-    const res = await transactionStatus(tempId);
-    if (res.transactionId && isOnChainTxHash(res.transactionId)) return res.transactionId;
-    const status = res.status?.toLowerCase();
-    if (status === "rejected" || status === "failed") return null;
-  }
-  return null;
-}
-
 export default function SubscriptionPage() {
-  const { address, executeTransaction, transactionStatus } = useWallet();
+  const { address, executeTransaction, transactionStatus, requestTransactionHistory } = useWallet();
   const { isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState("Free");
@@ -173,6 +155,7 @@ export default function SubscriptionPage() {
     try {
       toast.info(`Initiating Subscription to ${tier.name} on Aleo...`);
 
+      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_SUBS_PROGRAM_ID);
       const result = await executeTransaction({
         program: PASSMEET_SUBS_PROGRAM_ID,
         function: "subscribe",
@@ -183,14 +166,26 @@ export default function SubscriptionPage() {
       const tempId = result?.transactionId;
       console.log("[PassMeet Subscription] subscribe: tx submitted", { tempId });
       if (tempId) {
-        const txHash = await pollForTxHash(tempId, transactionStatus);
-        console.log("[PassMeet Subscription] subscribe: success", { onChainTxHash: txHash ?? "pending" });
+        const confirm = await pollForTxHash(tempId, transactionStatus, {
+          program: PASSMEET_SUBS_PROGRAM_ID,
+          requestTransactionHistory,
+          historyBefore,
+        });
+        if (confirm.state !== "confirmed" || !confirm.txHash) {
+          throw new Error(
+            confirm.state === "rejected" ? "Subscription was rejected." :
+            confirm.state === "failed" ? "Subscription failed on-chain." :
+            "Subscription confirmation timed out. Check your wallet for status."
+          );
+        }
+        const txHash = confirm.txHash;
+        console.log("[PassMeet Subscription] subscribe: success", { onChainTxHash: txHash });
         setCurrentTier(tier.name);
         localStorage.setItem("passmeet_subscription", JSON.stringify({
           tier: tier.name,
           address,
           timestamp: Date.now(),
-          txHash: txHash ?? tempId
+          txHash
         }));
         const explorerUrl = txHash ? getTransactionUrl(txHash) : null;
         toast.success(`Subscribed to ${tier.name}!`, {

@@ -4,6 +4,7 @@ import { createContext, useContext, useState, useEffect, useCallback, useRef, Re
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, CREDITS_PROGRAM_ID } from "@/lib/aleo";
 import { getEventCounter, getEvent } from "@/lib/aleo-rpc";
+import { pollForTxHash, snapshotTxHistory } from "@/lib/walletTx";
 
 export type PaymentRail = "credits" | "usdcx" | "usad";
 
@@ -196,38 +197,8 @@ function saveTicketsToLocalStorage(address: string, tickets: Ticket[]) {
 // Provider
 // ---------------------
 
-/** Aleo on-chain tx IDs: at1... 61+ chars. Temp UUIDs from wallet are invalid for explorer. */
-function isOnChainTxHash(id: string): boolean {
-  return typeof id === "string" && id.startsWith("at1") && id.length >= 61;
-}
-
-export type TxState = "submitted" | "confirmed" | "timed_out" | "failed" | "rejected";
-
-/** Poll for final ON-CHAIN transaction ID (at1...). Returns state + hash. Never treats null as success. */
-async function pollForTxHash(
-  tempId: string,
-  transactionStatus: (id: string) => Promise<{ status: string; transactionId?: string; error?: string }>,
-  maxAttempts = 90,
-  firstPhaseAttempts = 10,
-  firstPhaseDelayMs = 1000,
-  secondPhaseDelayMs = 2000
-): Promise<{ state: TxState; txHash: string | null }> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const delay = i < firstPhaseAttempts ? firstPhaseDelayMs : secondPhaseDelayMs;
-    await new Promise((r) => setTimeout(r, delay));
-    const res = await transactionStatus(tempId);
-    if (res.transactionId && isOnChainTxHash(res.transactionId)) {
-      return { state: "confirmed", txHash: res.transactionId };
-    }
-    const status = res.status?.toLowerCase();
-    if (status === "rejected") return { state: "rejected", txHash: null };
-    if (status === "failed") return { state: "failed", txHash: null };
-  }
-  return { state: "timed_out", txHash: null };
-}
-
 export function PassMeetProvider({ children }: PassMeetProviderProps) {
-  const { address, signMessage, executeTransaction, transactionStatus, requestRecords, wallet } = useWallet();
+  const { address, signMessage, executeTransaction, transactionStatus, requestRecords, requestTransactionHistory, wallet } = useWallet();
   const walletName = (wallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ?? (wallet as { name?: string })?.name ?? "";
   const [events, setEvents] = useState<Event[]>([]);
   const [myTickets, setMyTickets] = useState<Ticket[]>([]);
@@ -568,6 +539,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const creditsMicro = Math.floor(priceCredits * 1_000_000);
       const usdcxMicro = Math.floor(priceUsdcx * 1_000_000);
       const usadMicro = Math.floor(priceUsad * 1_000_000);
+      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "create_event",
@@ -578,7 +550,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tempId = result?.transactionId;
       LOG("createEvent: tx submitted", { tempId });
       if (tempId) {
-        const { state, txHash } = await pollForTxHash(tempId, transactionStatus);
+        const { state, txHash } = await pollForTxHash(tempId, transactionStatus, {
+          program: PASSMEET_V1_PROGRAM_ID,
+          requestTransactionHistory,
+          historyBefore,
+        });
         if (state !== "confirmed") {
           throw new Error(
             state === "rejected" ? "Transaction was rejected." :
@@ -719,6 +695,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           }
         }
         LOG("buyTicket: executing payment to organizer", { organizer: event.organizerAddress.slice(0, 12) + "...", priceMicro });
+        const payHistoryBefore = await snapshotTxHistory(requestTransactionHistory, CREDITS_PROGRAM_ID);
         const payTxResult = (await executeTransaction({
           program: CREDITS_PROGRAM_ID,
           function: "transfer_private",
@@ -729,7 +706,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         if (!payTempId) {
           throw new Error("Payment transaction was not submitted. Please try again.");
         }
-        const payPollResult = await pollForTxHash(payTempId, transactionStatus);
+        const payPollResult = await pollForTxHash(payTempId, transactionStatus, {
+          program: CREDITS_PROGRAM_ID,
+          requestTransactionHistory,
+          historyBefore: payHistoryBefore,
+        });
         if (payPollResult.state !== "confirmed") {
           throw new Error(
             payPollResult.state === "rejected" ? "Payment was rejected." :
@@ -743,6 +724,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const mintFunction = isFree ? "mint_free_ticket" : "mint_ticket";
       LOG("buyTicket: minting", { eventIdNum, nextTicketId, mintFunction });
 
+      const mintHistoryBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
       const txPayload = {
         program: PASSMEET_V1_PROGRAM_ID,
         function: mintFunction,
@@ -760,7 +742,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tempId = result?.transactionId ?? null;
       LOG("buyTicket: tx submitted", { tempId, walletName: walletName || "unknown" });
       if (tempId) {
-        const mintResult = await pollForTxHash(tempId, transactionStatus);
+        const mintResult = await pollForTxHash(tempId, transactionStatus, {
+          program: PASSMEET_V1_PROGRAM_ID,
+          requestTransactionHistory,
+          historyBefore: mintHistoryBefore,
+        });
         if (mintResult.state !== "confirmed") {
           throw new Error(
             mintResult.state === "rejected" ? "Mint was rejected." :
@@ -951,6 +937,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           recordInput = `{\nowner: ${fmt(owner)},\nevent_id: ${fmt(eventId)},\nticket_id: ${fmt(ticketId)},\n_nonce: ${fmt(nonce)},\nversion: ${fmt(version)}\n}`;
         }
       }
+      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "verify_entry",
@@ -961,7 +948,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tempId = result?.transactionId;
       LOG("verifyEntry: tx submitted", { tempId });
       if (tempId) {
-        const verifyResult = await pollForTxHash(tempId, transactionStatus);
+        const verifyResult = await pollForTxHash(tempId, transactionStatus, {
+          program: PASSMEET_V1_PROGRAM_ID,
+          requestTransactionHistory,
+          historyBefore,
+        });
         if (verifyResult.state !== "confirmed") {
           throw new Error(
             verifyResult.state === "rejected" ? "Verification was rejected." :

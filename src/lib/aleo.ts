@@ -5,10 +5,21 @@ export const PASSMEET_V1_PROGRAM_ID = process.env.NEXT_PUBLIC_PASSMEET_V1_PROGRA
 export const PASSMEET_SUBS_PROGRAM_ID = process.env.NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID || "passmeet_subs_7788.aleo";
 export const CREDITS_PROGRAM_ID = "credits.aleo";
 
+export const TOKEN_REGISTRY_PROGRAM_ID =
+  process.env.NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID || "token_registry.aleo";
+export const USDCX_TOKEN_ID = process.env.NEXT_PUBLIC_USDCX_TOKEN_ID || "";
+export const USAD_TOKEN_ID = process.env.NEXT_PUBLIC_USAD_TOKEN_ID || "";
+
 export const PROGRAM_IDS = [
   PASSMEET_V1_PROGRAM_ID,
   PASSMEET_SUBS_PROGRAM_ID,
 ];
+
+export function normalizeFieldLiteral(value: string): string {
+  const v = (value || "").trim();
+  if (!v) return "";
+  return v.endsWith("field") ? v : `${v}field`;
+}
 
 /** Provable Explorer - use to verify transactions and programs on-chain */
 export const EXPLORER_BASE =
