@@ -13,6 +13,12 @@ const eslintConfig = [
   {
     ignores: [".next/", "next-env.d.ts"],
   },
+  {
+    files: ["scripts/**/*.js"],
+    rules: {
+      "@typescript-eslint/no-require-imports": "off",
+    },
+  },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
 ];
 

@@ -220,122 +220,119 @@ export default function TicketsPage() {
             </div>
           ) : events.length > 0 ? (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-              {events.map((event) => (
-                (() => {
-                  const isFree = event.supportedRails.length === 0;
-                  const defaultRail: PaymentRail = (event.supportedRails.includes("credits")
-                    ? "credits"
-                    : event.supportedRails[0]) ?? "credits";
-                  const selectedRail = selectedRailByEvent[event.id] ?? defaultRail;
-                  const priceMicro = railPriceMicro(event, selectedRail);
-                  const configured = railConfigured(selectedRail);
-
-                  return (
-                <motion.div
-                  key={event.id}
-                  layout
-                  initial={{ opacity: 0, scale: 0.95 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  whileHover={{ y: -5 }}
-                  className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-all hover:border-primary/50 hover:bg-white/[0.08]"
-                >
-                  <div className="relative h-48 w-full overflow-hidden">
-                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                    <img src={event.image} alt={event.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
-                    <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                      <Badge
-                        className="bg-primary text-black font-bold border-none"
-                        title={isFree ? "Free event" : "Payment is executed atomically on-chain when you mint"}
-                      >
-                        {isFree ? "Free" : `${formatMicro(priceMicro)} ${railLabel(selectedRail)}`}
-                        {!isFree && (
-                          <span className="ml-1 opacity-80 text-[10px] font-normal">(pay on mint)</span>
-                        )}
-                      </Badge>
-                      <span className="text-xs text-white/70 font-medium bg-black/50 backdrop-blur-md px-2 py-1 rounded-md flex items-center gap-1">
-                        <Users className="h-3 w-3" />
-                        {event.ticketCount}/{event.capacity}
-                      </span>
-                    </div>
-                  </div>
-                  <div className="flex flex-1 flex-col p-6">
-                    <div className="flex items-center gap-2 mb-2">
-                      <h3 className="text-xl font-bold text-white group-hover:text-primary transition-colors">{event.name}</h3>
-                      <Badge variant="outline" className="border-primary/30 text-primary text-[10px]">ZK</Badge>
-                    </div>
-                    <div className="mt-4 space-y-2">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Calendar className="h-4 w-4" />
-                        {event.date}
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <MapPin className="h-4 w-4" />
-                        {event.location}
-                      </div>
-                    </div>
-                    <div className="mt-auto pt-6">
-                      {!isFree && event.supportedRails.length > 0 && (
-                        <div className="mb-3">
-                          <label className="block text-[11px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
-                            Payment Rail
-                          </label>
-                          <select
-                            value={selectedRail}
-                            onChange={(e) => setSelectedRailByEvent((prev) => ({ ...prev, [event.id]: e.target.value as PaymentRail }))}
-                            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-primary/50"
-                          >
-                            {event.supportedRails.map((r) => {
-                              const micro = railPriceMicro(event, r);
-                              const disabled = !railConfigured(r);
-                              return (
-                                <option key={r} value={r} disabled={disabled}>
-                                  {railLabel(r)} · {formatMicro(micro)}
-                                  {r === "credits" ? " Aleo" : ""}
-                                  {!disabled ? "" : " (needs config)"}
-                                </option>
-                              );
-                            })}
-                          </select>
-                          {!configured && (
-                            <p className="mt-1 text-xs text-yellow-400/90">
-                              {railLabel(selectedRail)} is not configured on this deployment. Ask the admin to set token IDs.
-                            </p>
+              {events.map((event) => {
+                const isFree = event.supportedRails.length === 0;
+                const defaultRail: PaymentRail = (event.supportedRails.includes("credits")
+                  ? "credits"
+                  : event.supportedRails[0]) ?? "credits";
+                const selectedRail = selectedRailByEvent[event.id] ?? defaultRail;
+                const priceMicro = railPriceMicro(event, selectedRail);
+                const configured = railConfigured(selectedRail);
+                return (
+                  <motion.div
+                    key={event.id}
+                    layout
+                    initial={{ opacity: 0, scale: 0.95 }}
+                    animate={{ opacity: 1, scale: 1 }}
+                    whileHover={{ y: -5 }}
+                    className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-all hover:border-primary/50 hover:bg-white/[0.08]"
+                  >
+                    <div className="relative h-48 w-full overflow-hidden">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img src={event.image} alt={event.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
+                      <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
+                        <Badge
+                          className="bg-primary text-black font-bold border-none"
+                          title={isFree ? "Free event" : "Payment is executed atomically on-chain when you mint"}
+                        >
+                          {isFree ? "Free" : `${formatMicro(priceMicro)} ${railLabel(selectedRail)}`}
+                          {!isFree && (
+                            <span className="ml-1 opacity-80 text-[10px] font-normal">(pay on mint)</span>
                           )}
-                        </div>
-                      )}
-                      <Button
-                        className="w-full bg-primary text-black hover:bg-primary/90 font-bold h-11 rounded-full"
-                        onClick={() => handleBuyTicket(event.id, isFree ? undefined : selectedRail)}
-                        disabled={loading === `buy-${event.id}` || !address || event.ticketCount >= event.capacity || (!isFree && !configured)}
-                      >
-                        {loading === `buy-${event.id}` ? (
-                          <>
-                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                            Minting...
-                          </>
-                        ) : !address ? (
-                          <>
-                            <Wallet className="mr-2 h-4 w-4" />
-                            Connect Wallet
-                          </>
-                        ) : event.ticketCount >= event.capacity ? (
-                          "Sold Out"
-                        ) : !isFree && !configured ? (
-                          "Rail Not Configured"
-                        ) : (
-                          <>
-                            {isFree ? "Mint Free Ticket" : `Pay with ${railLabel(selectedRail)}`}
-                            <ArrowRight className="ml-2 h-4 w-4" />
-                          </>
-                        )}
-                      </Button>
+                        </Badge>
+                        <span className="text-xs text-white/70 font-medium bg-black/50 backdrop-blur-md px-2 py-1 rounded-md flex items-center gap-1">
+                          <Users className="h-3 w-3" />
+                          {event.ticketCount}/{event.capacity}
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                </motion.div>
-                  );
-                })()}
-              ))}
+                    <div className="flex flex-1 flex-col p-6">
+                      <div className="flex items-center gap-2 mb-2">
+                        <h3 className="text-xl font-bold text-white group-hover:text-primary transition-colors">{event.name}</h3>
+                        <Badge variant="outline" className="border-primary/30 text-primary text-[10px]">ZK</Badge>
+                      </div>
+                      <div className="mt-4 space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <Calendar className="h-4 w-4" />
+                          {event.date}
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                          <MapPin className="h-4 w-4" />
+                          {event.location}
+                        </div>
+                      </div>
+                      <div className="mt-auto pt-6">
+                        {!isFree && event.supportedRails.length > 0 && (
+                          <div className="mb-3">
+                            <label className="block text-[11px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
+                              Payment Rail
+                            </label>
+                            <select
+                              value={selectedRail}
+                              onChange={(e) => setSelectedRailByEvent((prev) => ({ ...prev, [event.id]: e.target.value as PaymentRail }))}
+                              className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-primary/50"
+                            >
+                              {event.supportedRails.map((r) => {
+                                const micro = railPriceMicro(event, r);
+                                const disabled = !railConfigured(r);
+                                return (
+                                  <option key={r} value={r} disabled={disabled}>
+                                    {railLabel(r)} · {formatMicro(micro)}
+                                    {r === "credits" ? " Aleo" : ""}
+                                    {!disabled ? "" : " (needs config)"}
+                                  </option>
+                                );
+                              })}
+                            </select>
+                            {!configured && (
+                              <p className="mt-1 text-xs text-yellow-400/90">
+                                {railLabel(selectedRail)} is not configured on this deployment. Ask the admin to set token IDs.
+                              </p>
+                            )}
+                          </div>
+                        )}
+                        <Button
+                          className="w-full bg-primary text-black hover:bg-primary/90 font-bold h-11 rounded-full"
+                          onClick={() => handleBuyTicket(event.id, isFree ? undefined : selectedRail)}
+                          disabled={loading === `buy-${event.id}` || !address || event.ticketCount >= event.capacity || (!isFree && !configured)}
+                        >
+                          {loading === `buy-${event.id}` ? (
+                            <>
+                              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                              Minting...
+                            </>
+                          ) : !address ? (
+                            <>
+                              <Wallet className="mr-2 h-4 w-4" />
+                              Connect Wallet
+                            </>
+                          ) : event.ticketCount >= event.capacity ? (
+                            "Sold Out"
+                          ) : !isFree && !configured ? (
+                            "Rail Not Configured"
+                          ) : (
+                            <>
+                              {isFree ? "Mint Free Ticket" : `Pay with ${railLabel(selectedRail)}`}
+                              <ArrowRight className="ml-2 h-4 w-4" />
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    </div>
+                  </motion.div>
+                );
+              })}
             </div>
           ) : (
             <div className="flex flex-col items-center justify-center py-20 text-center">

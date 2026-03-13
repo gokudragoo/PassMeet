@@ -581,25 +581,33 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
         saveLocalMetadata(idStr, { name, date: eventDate, location: eventLocation });
 
-        const metaRes = await fetch("/api/events", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            id: newOnChainId,
-            name,
-            date: eventDate,
-            location: eventLocation,
-            organizer: address,
-            capacity,
-            price: creditsMicro / 1_000_000,
-            priceCredits: creditsMicro,
-            priceUsdcx,
-            priceUsad
-          })
-        });
-        if (!metaRes.ok) {
-          const errBody = await metaRes.text();
-          throw new Error(`Metadata save failed: ${errBody || metaRes.statusText}`);
+        let metadataSaved = false;
+        try {
+          const metaRes = await fetch("/api/events", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id: newOnChainId,
+              name,
+              date: eventDate,
+              location: eventLocation,
+              organizer: address,
+              capacity,
+              price: creditsMicro / 1_000_000,
+              priceCredits: creditsMicro,
+              priceUsdcx: usdcxMicro,
+              priceUsad: usadMicro
+            })
+          });
+          if (metaRes.ok) {
+            const body = (await metaRes.json().catch(() => null)) as { ipfsSaved?: unknown } | null;
+            metadataSaved = body?.ipfsSaved === true;
+          } else {
+            const errBody = await metaRes.text().catch(() => "");
+            LOG("createEvent: metadata save failed", { status: metaRes.status, body: errBody });
+          }
+        } catch (e) {
+          LOG("createEvent: metadata save error", (e as Error)?.message ?? e);
         }
 
         const rails: PaymentRail[] = [];
@@ -626,8 +634,9 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         };
 
         setEvents((prev) => [...prev, newEvent]);
-        LOG("createEvent: success", { eventId: idStr, onChainTxHash: txHash });
-        return txHash;
+        if (!txHash) throw new Error("Transaction confirmed but missing on-chain tx hash.");
+        LOG("createEvent: success", { eventId: idStr, onChainTxHash: txHash, metadataSaved });
+        return { txHash, eventId: idStr, metadataSaved };
       }
       LOG("createEvent: no tempId from wallet");
       return null;
@@ -636,7 +645,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to create event:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus]);
+  }, [address, executeTransaction, transactionStatus, requestTransactionHistory]);
 
   // ---- Buy Ticket ----
   const buyTicket = useCallback(async (event: Event, rail: PaymentRail = "credits"): Promise<string | null> => {
@@ -996,7 +1005,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to verify entry:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus, requestRecords]);
+  }, [address, executeTransaction, transactionStatus, requestRecords, requestTransactionHistory]);
 
   // ---- Helpers ----
   async function pollForNewEventId(prevCount: number, maxAttempts = 15): Promise<number> {

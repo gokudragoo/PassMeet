@@ -148,7 +148,7 @@ export default function OrganizerPage() {
     try {
       toast.info("Creating event on Aleo blockchain...");
 
-      const txHash = await createEvent(
+      const result = await createEvent(
         eventName,
         parseInt(capacity),
         parseFloat(priceCredits || "0"),
@@ -158,10 +158,12 @@ export default function OrganizerPage() {
         location
       );
 
-      if (txHash !== null) {
-        const explorerUrl = getTransactionUrl(txHash);
-        toast.success(`Event created successfully!`, {
-          description: explorerUrl ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.",
+      if (result) {
+        const explorerUrl = getTransactionUrl(result.txHash);
+        toast.success(result.metadataSaved ? "Event created and published!" : "Event created on-chain!", {
+          description: result.metadataSaved
+            ? (explorerUrl ? `Transaction: ${result.txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.")
+            : "Metadata was not saved to IPFS. The event will still be visible from on-chain data (with placeholder metadata).",
           ...(explorerUrl && {
             action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
           })

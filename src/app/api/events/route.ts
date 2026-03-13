@@ -48,14 +48,28 @@ export async function POST(request: Request) {
     };
 
     const cid = await saveEventMetadata(event);
-    LOG("POST /api/events: IPFS saved", { eventId, cid: cid ?? "null" });
+    if (!cid) {
+      LOG("POST /api/events: IPFS not configured or save failed", { eventId });
+      return NextResponse.json(
+        {
+          success: false,
+          error: "IPFS metadata storage is not configured (PINATA_JWT missing) or save failed.",
+          cid: null,
+          event,
+          ipfsSaved: false,
+        },
+        { status: 503 }
+      );
+    }
+
+    LOG("POST /api/events: IPFS saved", { eventId, cid });
     eventsCache = null; // invalidate cache so new event appears
 
     return NextResponse.json({
       success: true,
-      cid: cid ?? null,
+      cid,
       event,
-      ipfsSaved: cid != null,
+      ipfsSaved: true,
     });
   } catch (error) {
     LOG("POST /api/events: error", error);
