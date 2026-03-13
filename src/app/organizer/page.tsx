@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { Button } from "@/components/ui/button";
@@ -11,10 +11,19 @@ import { Plus, Users, Calendar, Wallet, CheckCircle2, AlertCircle, Loader2, Refr
 import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
 import { Badge } from "@/components/ui/badge";
-import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
+import {
+  getTransactionUrl,
+  getProgramUrl,
+  PASSMEET_V1_PROGRAM_ID,
+  USDCX_TOKEN_ID,
+  USAD_TOKEN_ID,
+  normalizeFieldLiteral,
+} from "@/lib/aleo";
+import { getConfiguredTokenId } from "@/lib/aleo-rpc";
+import { pollForTxHash, snapshotTxHistory } from "@/lib/walletTx";
 
 export default function OrganizerPage() {
-  const { address } = useWallet();
+  const { address, executeTransaction, transactionStatus, requestTransactionHistory } = useWallet();
   const { events, isLoading, createEvent, refreshEvents, isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState(false);
   const [eventName, setEventName] = useState("");
@@ -24,6 +33,88 @@ export default function OrganizerPage() {
   const [priceUsad, setPriceUsad] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [location, setLocation] = useState("");
+  const [tokenConfig, setTokenConfig] = useState<{ usdcx: string | null; usad: string | null; loading: boolean }>({
+    usdcx: null,
+    usad: null,
+    loading: true,
+  });
+  const [configuringTokens, setConfiguringTokens] = useState(false);
+
+  const tokenRailsConfigured = !!tokenConfig.usdcx && tokenConfig.usdcx !== "0field" && !!tokenConfig.usad && tokenConfig.usad !== "0field";
+  const envUsdcx = normalizeFieldLiteral(USDCX_TOKEN_ID);
+  const envUsad = normalizeFieldLiteral(USAD_TOKEN_ID);
+  const tokenInputsDisabled = !envUsdcx || !envUsad || !tokenRailsConfigured;
+
+  useEffect(() => {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [usdcx, usad] = await Promise.all([getConfiguredTokenId(0), getConfiguredTokenId(1)]);
+        if (!cancelled) setTokenConfig({ usdcx: usdcx ?? null, usad: usad ?? null, loading: false });
+      } catch {
+        if (!cancelled) setTokenConfig({ usdcx: null, usad: null, loading: false });
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleConfigureTokens = async () => {
+    if (!address) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+    if (!isAuthenticated) {
+      toast.error("Please sign to verify your identity first");
+      return;
+    }
+    if (!executeTransaction) {
+      toast.error("Wallet does not support transactions");
+      return;
+    }
+    if (!envUsdcx || !envUsad) {
+      toast.error("Token IDs not configured", {
+        description: "Set NEXT_PUBLIC_USDCX_TOKEN_ID and NEXT_PUBLIC_USAD_TOKEN_ID for this deployment.",
+      });
+      return;
+    }
+
+    setConfiguringTokens(true);
+    try {
+      toast.info("Configuring USDCx/USAD rails on-chain...");
+      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
+      const result = await executeTransaction({
+        program: PASSMEET_V1_PROGRAM_ID,
+        function: "configure_tokens",
+        inputs: [envUsdcx, envUsad],
+        fee: 100_000,
+      });
+      const tempId = result?.transactionId;
+      if (!tempId) throw new Error("Transaction was not submitted.");
+      const confirm = await pollForTxHash(tempId, transactionStatus, {
+        program: PASSMEET_V1_PROGRAM_ID,
+        requestTransactionHistory,
+        historyBefore,
+      });
+      if (confirm.state !== "confirmed" || !confirm.txHash) {
+        throw new Error(
+          confirm.state === "rejected" ? "Configuration was rejected." :
+          confirm.state === "failed" ? "Configuration failed on-chain." :
+          "Configuration confirmation timed out."
+        );
+      }
+      toast.success("Token rails configured!", { description: `Tx: ${confirm.txHash.slice(0, 16)}...` });
+      const [usdcx, usad] = await Promise.all([getConfiguredTokenId(0), getConfiguredTokenId(1)]);
+      setTokenConfig({ usdcx: usdcx ?? null, usad: usad ?? null, loading: false });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to configure token rails";
+      toast.error(msg);
+    } finally {
+      setConfiguringTokens(false);
+    }
+  };
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -35,6 +126,22 @@ export default function OrganizerPage() {
     if (!isAuthenticated) {
       toast.error("Please sign to verify your identity first");
       return;
+    }
+
+    const wantTokens = parseFloat(priceUsdcx || "0") > 0 || parseFloat(priceUsad || "0") > 0;
+    if (wantTokens) {
+      if (!envUsdcx || !envUsad) {
+        toast.error("Token IDs not configured", {
+          description: "Set NEXT_PUBLIC_USDCX_TOKEN_ID and NEXT_PUBLIC_USAD_TOKEN_ID for this deployment.",
+        });
+        return;
+      }
+      if (!tokenRailsConfigured) {
+        toast.error("Token rails not configured on-chain", {
+          description: "Configure USDCx/USAD on the contract before creating token-priced events.",
+        });
+        return;
+      }
     }
 
     setLoading(true);
@@ -87,6 +194,15 @@ export default function OrganizerPage() {
   const totalAttendees = myEvents.reduce((sum, e) => sum + e.ticketCount, 0);
   const totalCapacity = myEvents.reduce((sum, e) => sum + e.capacity, 0);
 
+  const formatRailPrices = (event: { supportedRails: string[]; priceCredits: number; priceUsdcx: number; priceUsad: number }) => {
+    if (event.supportedRails.length === 0) return "Free";
+    const parts: string[] = [];
+    if (event.priceCredits > 0) parts.push(`${(event.priceCredits / 1_000_000).toFixed(2).replace(/\\.00$/, "")} Aleo`);
+    if (event.priceUsdcx > 0) parts.push(`${(event.priceUsdcx / 1_000_000).toFixed(2).replace(/\\.00$/, "")} USDCx`);
+    if (event.priceUsad > 0) parts.push(`${(event.priceUsad / 1_000_000).toFixed(2).replace(/\\.00$/, "")} USAD`);
+    return parts.join(" · ");
+  };
+
   return (
     <div className="container mx-auto px-4 py-12">
       <motion.div
@@ -129,6 +245,37 @@ export default function OrganizerPage() {
           </CardHeader>
           <CardContent>
             <form onSubmit={handleCreateEvent} className="space-y-4">
+              <div className="rounded-xl border border-white/10 bg-black/30 p-4">
+                <div className="flex items-center justify-between gap-4">
+                  <div>
+                    <p className="text-sm font-bold text-white">Token Rails</p>
+                    <p className="text-xs text-zinc-400">
+                      {tokenConfig.loading
+                        ? "Checking on-chain config..."
+                        : tokenRailsConfigured
+                          ? "USDCx/USAD token IDs are configured on-chain."
+                          : "USDCx/USAD are not configured yet."}
+                    </p>
+                  </div>
+                  {!tokenRailsConfigured && (
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      onClick={handleConfigureTokens}
+                      disabled={!address || configuringTokens || tokenConfig.loading}
+                      className="border-primary/30 text-primary hover:bg-primary/10"
+                    >
+                      {configuringTokens ? <Loader2 className="h-4 w-4 animate-spin" /> : "Configure"}
+                    </Button>
+                  )}
+                </div>
+                {(!envUsdcx || !envUsad) && (
+                  <p className="mt-3 text-xs text-yellow-400/90">
+                    Missing env token IDs. Set `NEXT_PUBLIC_USDCX_TOKEN_ID` and `NEXT_PUBLIC_USAD_TOKEN_ID` to enable token payments.
+                  </p>
+                )}
+              </div>
               <div className="space-y-2">
                 <Label htmlFor="name" className="text-zinc-400">Event Name</Label>
                 <Input
@@ -191,7 +338,7 @@ export default function OrganizerPage() {
                     />
                   </div>
                   <div>
-                    <Label htmlFor="priceUsdcx" className="text-xs text-zinc-500">USDCx (soon)</Label>
+                    <Label htmlFor="priceUsdcx" className="text-xs text-zinc-500">USDCx</Label>
                     <Input
                       id="priceUsdcx"
                       type="number"
@@ -200,12 +347,12 @@ export default function OrganizerPage() {
                       placeholder="0"
                       value={priceUsdcx}
                       onChange={(e) => setPriceUsdcx(e.target.value)}
-                      className="bg-black/40 border-white/10 text-white focus:border-primary mt-1 opacity-50"
-                      disabled
+                      className={`bg-black/40 border-white/10 text-white focus:border-primary mt-1 ${tokenInputsDisabled ? "opacity-50" : ""}`}
+                      disabled={tokenInputsDisabled}
                     />
                   </div>
                   <div>
-                    <Label htmlFor="priceUsad" className="text-xs text-zinc-500">USAD (soon)</Label>
+                    <Label htmlFor="priceUsad" className="text-xs text-zinc-500">USAD</Label>
                     <Input
                       id="priceUsad"
                       type="number"
@@ -214,12 +361,12 @@ export default function OrganizerPage() {
                       placeholder="0"
                       value={priceUsad}
                       onChange={(e) => setPriceUsad(e.target.value)}
-                      className="bg-black/40 border-white/10 text-white focus:border-primary mt-1 opacity-50"
-                      disabled
+                      className={`bg-black/40 border-white/10 text-white focus:border-primary mt-1 ${tokenInputsDisabled ? "opacity-50" : ""}`}
+                      disabled={tokenInputsDisabled}
                     />
                   </div>
                 </div>
-                <p className="text-xs text-zinc-500">Free event: set all to 0. Paid: set Credits price.</p>
+                <p className="text-xs text-zinc-500">Free: set all to 0. Paid: set any rail (Credits, USDCx, USAD).</p>
               </div>
               <Button
                 type="submit"
@@ -304,7 +451,7 @@ export default function OrganizerPage() {
                         </div>
                         <div className="flex items-center gap-2 text-primary font-bold">
                           <Wallet className="h-4 w-4" />
-                          <span className="text-sm">{event.price} Aleo</span>
+                          <span className="text-sm">{formatRailPrices(event)}</span>
                         </div>
                       </div>
                     </div>
@@ -355,7 +502,7 @@ export default function OrganizerPage() {
                     <div className="flex items-center gap-4 text-xs text-zinc-500">
                       <span>{event.date}</span>
                       <span>{event.location}</span>
-                      <span className="text-primary">{event.price} Aleo</span>
+                      <span className="text-primary">{formatRailPrices(event)}</span>
                     </div>
                   </motion.div>
                 ))}
