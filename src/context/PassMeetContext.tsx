@@ -710,17 +710,25 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const nextTicketId = onChainEvent.ticket_count + 1;
       const isFree = event.priceCredits === 0 && event.priceUsdcx === 0 && event.priceUsad === 0;
 
-      if (rail === "usdcx" || rail === "usad") {
-        throw new Error("USDCx and USAD payment rails are not yet available. Use Aleo credits.");
-      }
+      const FEE_TX = 100_000;
+      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
 
-      const FEE_MINT = 100_000;
-      const FEE_TRANSFER = 100_000;
+      let functionName: string;
+      let inputs: string[];
 
-      // Paid event (credits): transfer credits to organizer first, then mint
-      if (!isFree && rail === "credits" && requestRecords && event.organizerAddress) {
+      if (isFree) {
+        functionName = "mint_free_ticket";
+        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`];
+      } else if (rail === "credits") {
+        if (!requestRecords) {
+          throw new Error("Wallet does not support record requests. Please use Leo, Puzzle, Fox, or Shield wallet.");
+        }
         const priceMicro = event.priceCredits;
-        const requiredCredits = priceMicro + FEE_TRANSFER + FEE_MINT;
+        if (priceMicro <= 0) {
+          throw new Error("This event does not accept Aleo credits for payment.");
+        }
+
+        const requiredRecord = priceMicro + FEE_TX; // conservative: some wallets may use the same record for fees
         let creditsRecords: unknown[] = [];
         try {
           creditsRecords = (await requestRecords(CREDITS_PROGRAM_ID, true)) ?? [];
@@ -728,63 +736,68 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           LOG("buyTicket: requestRecords(credits) failed", (e as Error)?.message);
           throw new Error("Could not read your Aleo credits. Approve record access for credits.aleo and try again.");
         }
-        const recordItem = creditsRecords.find((r) => (getMicrocreditsFromCreditsRecord(r) ?? 0) >= requiredCredits);
+
+        const recordItem =
+          creditsRecords.find((r) => (getMicrocreditsFromCreditsRecord(r) ?? 0) >= requiredRecord) ??
+          creditsRecords.find((r) => (getMicrocreditsFromCreditsRecord(r) ?? 0) >= priceMicro) ??
+          null;
+
         if (!recordItem) {
           throw new Error(
-            `Insufficient private balance. You need at least ${(requiredCredits / 1_000_000).toFixed(2)} Aleo in a single credits record to pay for this ticket (${event.price} Aleo + fees).`
+            `Insufficient private balance. You need at least ${(requiredRecord / 1_000_000).toFixed(2)} Aleo in a single credits record to buy this ticket and cover fees.`
           );
         }
-        let creditRecordInput: string;
-        if (typeof recordItem === "string") {
-          creditRecordInput = recordItem;
-        } else {
-          const r = recordItem as Record<string, unknown>;
-          const str =
-            (typeof r?.plaintext === "string" ? r.plaintext : null) ??
-            (typeof r?.ciphertext === "string" ? r.ciphertext : null) ??
-            (typeof r?.record === "string" ? r.record : null);
-          if (typeof str === "string" && str.length > 10) {
-            creditRecordInput = str;
-          } else {
-            creditRecordInput = JSON.stringify(recordItem);
-          }
+
+        const creditRecordInput = toWalletRecordInput(recordItem);
+        functionName = "purchase_ticket_with_credits";
+        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, creditRecordInput];
+      } else {
+        if (!requestRecords) {
+          throw new Error("Wallet does not support record requests. Please use Leo, Puzzle, Fox, or Shield wallet.");
         }
-        LOG("buyTicket: executing payment to organizer", { organizer: event.organizerAddress.slice(0, 12) + "...", priceMicro });
-        const payHistoryBefore = await snapshotTxHistory(requestTransactionHistory, CREDITS_PROGRAM_ID);
-        const payTxResult = (await executeTransaction({
-          program: CREDITS_PROGRAM_ID,
-          function: "transfer_private",
-          inputs: [creditRecordInput, event.organizerAddress, `${priceMicro}u64`],
-          fee: FEE_TRANSFER,
-        })) ?? null;
-        const payTempId = payTxResult?.transactionId ?? null;
-        if (!payTempId) {
-          throw new Error("Payment transaction was not submitted. Please try again.");
+
+        const tokenProgram = TOKEN_REGISTRY_PROGRAM_ID;
+        const tokenId = normalizeFieldLiteral(rail === "usdcx" ? USDCX_TOKEN_ID : USAD_TOKEN_ID);
+        if (!tokenProgram) {
+          throw new Error("Token registry program is not configured.");
         }
-        const payPollResult = await pollForTxHash(payTempId, transactionStatus, {
-          program: CREDITS_PROGRAM_ID,
-          requestTransactionHistory,
-          historyBefore: payHistoryBefore,
+        if (!tokenId) {
+          throw new Error(`Missing token ID for ${rail.toUpperCase()}. Set NEXT_PUBLIC_${rail.toUpperCase()}_TOKEN_ID.`);
+        }
+        const price = rail === "usdcx" ? event.priceUsdcx : event.priceUsad;
+        if (price <= 0) {
+          throw new Error(`This event does not accept ${rail.toUpperCase()} for payment.`);
+        }
+
+        let tokenRecords: unknown[] = [];
+        try {
+          tokenRecords = (await requestRecords(tokenProgram, true)) ?? [];
+        } catch (e) {
+          LOG("buyTicket: requestRecords(token_registry) failed", (e as Error)?.message);
+          throw new Error("Could not read your token records. Approve record access for token_registry.aleo and try again.");
+        }
+
+        const recordItem = tokenRecords.find((r) => {
+          const rid = getTokenIdFromTokenRecord(r);
+          const amt = getTokenAmountFromTokenRecord(r) ?? 0;
+          return rid === tokenId && amt >= price;
         });
-        if (payPollResult.state !== "confirmed") {
-          throw new Error(
-            payPollResult.state === "rejected" ? "Payment was rejected." :
-            payPollResult.state === "failed" ? "Payment failed on-chain." :
-            "Payment confirmation timed out. Your balance may have been deducted; check your wallet. You can retry minting."
-          );
+        if (!recordItem) {
+          throw new Error(`No ${rail.toUpperCase()} token record found with sufficient private balance.`);
         }
-        LOG("buyTicket: payment confirmed", { payTxHash: payPollResult.txHash });
+
+        const tokenRecordInput = toWalletRecordInput(recordItem);
+        functionName = "purchase_ticket";
+        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, tokenRecordInput];
       }
 
-      const mintFunction = isFree ? "mint_free_ticket" : "mint_ticket";
-      LOG("buyTicket: minting", { eventIdNum, nextTicketId, mintFunction });
+      LOG("buyTicket: executing", { eventIdNum, nextTicketId, functionName, rail });
 
-      const mintHistoryBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
       const txPayload = {
         program: PASSMEET_V1_PROGRAM_ID,
-        function: mintFunction,
-        inputs: [`${eventIdNum}u64`, `${nextTicketId}u64`],
-        fee: FEE_MINT,
+        function: functionName,
+        inputs,
+        fee: FEE_TX,
       };
       let result: { transactionId?: string } | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -800,13 +813,13 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const mintResult = await pollForTxHash(tempId, transactionStatus, {
           program: PASSMEET_V1_PROGRAM_ID,
           requestTransactionHistory,
-          historyBefore: mintHistoryBefore,
+          historyBefore,
         });
-        if (mintResult.state !== "confirmed") {
+        if (mintResult.state !== "confirmed" || !mintResult.txHash) {
           throw new Error(
-            mintResult.state === "rejected" ? "Mint was rejected." :
-            mintResult.state === "failed" ? "Mint failed on-chain." :
-            "Mint confirmation timed out. Check your wallet for status."
+            mintResult.state === "rejected" ? "Transaction was rejected." :
+            mintResult.state === "failed" ? "Transaction failed on-chain." :
+            "Transaction confirmation timed out. Check your wallet for status."
           );
         }
         const txHash = mintResult.txHash;
@@ -820,7 +833,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           date: event.date,
           location: event.location,
           status: "Valid",
-          txHash: txHash ?? "", // txHash is non-null when state is confirmed
+          txHash,
           nullifier: "",
           recordString: undefined,
         };
@@ -850,7 +863,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to buy ticket:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus, requestRecords, refreshTickets, refreshEvents, walletName]);
+  }, [address, executeTransaction, transactionStatus, requestRecords, refreshTickets, refreshEvents, walletName, requestTransactionHistory]);
 
   // ---- Verify Entry ----
   const verifyEntry = useCallback(async (ticket: Ticket): Promise<string | null> => {

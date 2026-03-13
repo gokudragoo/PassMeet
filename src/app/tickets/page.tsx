@@ -22,8 +22,8 @@ import {
 import { toast } from "sonner";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
-import { usePassMeet, Ticket } from "@/context/PassMeetContext";
-import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
+import { usePassMeet, Ticket, PaymentRail } from "@/context/PassMeetContext";
+import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID, USDCX_TOKEN_ID, USAD_TOKEN_ID } from "@/lib/aleo";
 
 function getWalletHint(walletName: string): string {
   const name = (walletName || "").toLowerCase();
@@ -37,9 +37,32 @@ export default function TicketsPage() {
   const { events, myTickets, isLoading, buyTicket, verifyEntry, refreshEvents, refreshTickets, isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("available");
+  const [selectedRailByEvent, setSelectedRailByEvent] = useState<Record<string, PaymentRail>>({});
   const walletName = (wallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ?? (wallet as { name?: string })?.name ?? "";
 
-  const handleBuyTicket = async (eventId: string) => {
+  function formatMicro(micro: number): string {
+    return (micro / 1_000_000).toFixed(2).replace(/\.00$/, "");
+  }
+
+  function railLabel(rail: PaymentRail): string {
+    if (rail === "credits") return "Aleo Credits";
+    if (rail === "usdcx") return "USDCx";
+    return "USAD";
+  }
+
+  function railConfigured(rail: PaymentRail): boolean {
+    if (rail === "credits") return true;
+    if (rail === "usdcx") return !!USDCX_TOKEN_ID;
+    return !!USAD_TOKEN_ID;
+  }
+
+  function railPriceMicro(event: { priceCredits: number; priceUsdcx: number; priceUsad: number }, rail: PaymentRail): number {
+    if (rail === "credits") return event.priceCredits;
+    if (rail === "usdcx") return event.priceUsdcx;
+    return event.priceUsad;
+  }
+
+  const handleBuyTicket = async (eventId: string, rail?: PaymentRail) => {
     console.log("[PassMeet Tickets] handleBuyTicket: start", { eventId });
     if (!address) {
       toast.error("Please connect your wallet first");
@@ -62,7 +85,7 @@ export default function TicketsPage() {
         return;
       }
 
-      const txId = await buyTicket(event);
+      const txId = await buyTicket(event, rail);
 
       if (txId) {
         const explorerUrl = getTransactionUrl(txId);
@@ -198,6 +221,16 @@ export default function TicketsPage() {
           ) : events.length > 0 ? (
             <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
               {events.map((event) => (
+                (() => {
+                  const isFree = event.supportedRails.length === 0;
+                  const defaultRail: PaymentRail = (event.supportedRails.includes("credits")
+                    ? "credits"
+                    : event.supportedRails[0]) ?? "credits";
+                  const selectedRail = selectedRailByEvent[event.id] ?? defaultRail;
+                  const priceMicro = railPriceMicro(event, selectedRail);
+                  const configured = railConfigured(selectedRail);
+
+                  return (
                 <motion.div
                   key={event.id}
                   layout
@@ -211,9 +244,12 @@ export default function TicketsPage() {
                     <img src={event.image} alt={event.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
                     <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                      <Badge className="bg-primary text-black font-bold border-none" title={event.price > 0 ? "Paid to organizer when you mint" : "Free event"}>
-                        {event.price > 0 ? `${event.price} Aleo` : "Free"}
-                        {event.price > 0 && (
+                      <Badge
+                        className="bg-primary text-black font-bold border-none"
+                        title={isFree ? "Free event" : "Payment is executed atomically on-chain when you mint"}
+                      >
+                        {isFree ? "Free" : `${formatMicro(priceMicro)} ${railLabel(selectedRail)}`}
+                        {!isFree && (
                           <span className="ml-1 opacity-80 text-[10px] font-normal">(pay on mint)</span>
                         )}
                       </Badge>
@@ -239,10 +275,39 @@ export default function TicketsPage() {
                       </div>
                     </div>
                     <div className="mt-auto pt-6">
+                      {!isFree && event.supportedRails.length > 0 && (
+                        <div className="mb-3">
+                          <label className="block text-[11px] uppercase tracking-wider text-zinc-500 font-bold mb-1">
+                            Payment Rail
+                          </label>
+                          <select
+                            value={selectedRail}
+                            onChange={(e) => setSelectedRailByEvent((prev) => ({ ...prev, [event.id]: e.target.value as PaymentRail }))}
+                            className="w-full rounded-xl border border-white/10 bg-black/40 px-3 py-2 text-sm text-white outline-none focus:border-primary/50"
+                          >
+                            {event.supportedRails.map((r) => {
+                              const micro = railPriceMicro(event, r);
+                              const disabled = !railConfigured(r);
+                              return (
+                                <option key={r} value={r} disabled={disabled}>
+                                  {railLabel(r)} · {formatMicro(micro)}
+                                  {r === "credits" ? " Aleo" : ""}
+                                  {!disabled ? "" : " (needs config)"}
+                                </option>
+                              );
+                            })}
+                          </select>
+                          {!configured && (
+                            <p className="mt-1 text-xs text-yellow-400/90">
+                              {railLabel(selectedRail)} is not configured on this deployment. Ask the admin to set token IDs.
+                            </p>
+                          )}
+                        </div>
+                      )}
                       <Button
                         className="w-full bg-primary text-black hover:bg-primary/90 font-bold h-11 rounded-full"
-                        onClick={() => handleBuyTicket(event.id)}
-                        disabled={loading === `buy-${event.id}` || !address || event.ticketCount >= event.capacity}
+                        onClick={() => handleBuyTicket(event.id, isFree ? undefined : selectedRail)}
+                        disabled={loading === `buy-${event.id}` || !address || event.ticketCount >= event.capacity || (!isFree && !configured)}
                       >
                         {loading === `buy-${event.id}` ? (
                           <>
@@ -256,9 +321,11 @@ export default function TicketsPage() {
                           </>
                         ) : event.ticketCount >= event.capacity ? (
                           "Sold Out"
+                        ) : !isFree && !configured ? (
+                          "Rail Not Configured"
                         ) : (
                           <>
-                            Mint Private Ticket
+                            {isFree ? "Mint Free Ticket" : `Pay with ${railLabel(selectedRail)}`}
                             <ArrowRight className="ml-2 h-4 w-4" />
                           </>
                         )}
@@ -266,6 +333,8 @@ export default function TicketsPage() {
                     </div>
                   </div>
                 </motion.div>
+                  );
+                })()}
               ))}
             </div>
           ) : (

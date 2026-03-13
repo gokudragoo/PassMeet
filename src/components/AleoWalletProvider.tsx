@@ -12,11 +12,11 @@ import { Network } from "@provablehq/aleo-types";
 import { DecryptPermission } from "@provablehq/aleo-wallet-adaptor-core";
 import { PassMeetProvider } from "@/context/PassMeetContext";
 import { SplashScreen } from "@/components/SplashScreen";
-import { ALEO_NETWORK, PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
+import { ALEO_NETWORK, PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, TOKEN_REGISTRY_PROGRAM_ID } from "@/lib/aleo";
 
 import "@provablehq/aleo-wallet-adaptor-react-ui/dist/styles.css";
 
-const programs = [PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, "credits.aleo"];
+const programs = [PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, "credits.aleo", TOKEN_REGISTRY_PROGRAM_ID];
 
 export function AleoWalletProvider({ children }: { children: ReactNode }) {
   const [showSplash, setShowSplash] = useState(true);
