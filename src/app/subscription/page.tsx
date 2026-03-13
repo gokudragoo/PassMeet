@@ -18,10 +18,26 @@ import {
   ExternalLink
 } from "lucide-react";
 import { toast } from "sonner";
-import { usePassMeet } from "@/context/PassMeetContext";
-import { PASSMEET_SUBS_PROGRAM_ID, getTransactionUrl, getProgramUrl } from "@/lib/aleo";
-import { getSubscription } from "@/lib/aleo-subs-rpc";
+import { usePassMeet, type PaymentRail } from "@/context/PassMeetContext";
+import {
+  PASSMEET_SUBS_PROGRAM_ID,
+  getTransactionUrl,
+  getProgramUrl,
+  CREDITS_PROGRAM_ID,
+  TOKEN_REGISTRY_PROGRAM_ID,
+  USDCX_TOKEN_ID,
+  USAD_TOKEN_ID,
+  normalizeFieldLiteral,
+} from "@/lib/aleo";
+import { getLatestBlockHeight } from "@/lib/aleo-rpc";
+import { getSubscription, getSubscriptionTreasury, getSubscriptionTokenId } from "@/lib/aleo-subs-rpc";
 import { pollForTxHash, snapshotTxHistory } from "@/lib/walletTx";
+import {
+  getMicrocreditsFromCreditsRecord,
+  getTokenAmountFromTokenRecord,
+  getTokenIdFromTokenRecord,
+  toWalletRecordInput,
+} from "@/lib/aleoRecords";
 
 const TIER_NAMES: Record<number, string> = {
   0: "Free",
@@ -30,64 +46,172 @@ const TIER_NAMES: Record<number, string> = {
 };
 
 export default function SubscriptionPage() {
-  const { address, executeTransaction, transactionStatus, requestTransactionHistory } = useWallet();
+  const { address, executeTransaction, transactionStatus, requestTransactionHistory, requestRecords } = useWallet();
   const { isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState("Free");
   const [tierLoading, setTierLoading] = useState(true);
+  const [selectedRailByTier, setSelectedRailByTier] = useState<Record<number, PaymentRail>>({
+    1: "credits",
+    2: "credits",
+  });
+  const [subsConfig, setSubsConfig] = useState<{
+    treasury: string | null;
+    usdcxId: string | null;
+    usadId: string | null;
+    loading: boolean;
+  }>({
+    treasury: null,
+    usdcxId: null,
+    usadId: null,
+    loading: true,
+  });
+  const [configuring, setConfiguring] = useState(false);
+  const [latestHeight, setLatestHeight] = useState<number | null>(null);
+
+  const envUsdcx = normalizeFieldLiteral(USDCX_TOKEN_ID);
+  const envUsad = normalizeFieldLiteral(USAD_TOKEN_ID);
+
+  const SUB_PRICES_MICRO: Record<number, Record<PaymentRail, number>> = {
+    1: { credits: 500_000, usdcx: 5_000_000, usad: 5_000_000 },
+    2: { credits: 1_000_000, usdcx: 10_000_000, usad: 10_000_000 },
+  };
+
+  function formatMicro(micro: number): string {
+    return (micro / 1_000_000).toFixed(2).replace(/\.00$/, "");
+  }
+
+  function railLabel(rail: PaymentRail): string {
+    if (rail === "credits") return "Aleo Credits";
+    if (rail === "usdcx") return "USDCx";
+    return "USAD";
+  }
+
+  function railConfigured(rail: PaymentRail): boolean {
+    if (rail === "credits") return true;
+    if (rail === "usdcx") return !!envUsdcx;
+    return !!envUsad;
+  }
 
   useEffect(() => {
-    async function fetchTier() {
+    let cancelled = false;
+    const load = async () => {
+      try {
+        const [treasury, usdcxId, usadId] = await Promise.all([
+          getSubscriptionTreasury(),
+          getSubscriptionTokenId(0),
+          getSubscriptionTokenId(1),
+        ]);
+        if (!cancelled) setSubsConfig({ treasury: treasury ?? null, usdcxId: usdcxId ?? null, usadId: usadId ?? null, loading: false });
+      } catch {
+        if (!cancelled) setSubsConfig({ treasury: null, usdcxId: null, usadId: null, loading: false });
+      }
+    };
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  const handleConfigureSubscriptions = async () => {
+    if (!address) {
+      toast.error("Please connect your wallet first");
+      return;
+    }
+    if (!isAuthenticated) {
+      toast.error("Please sign to verify your identity first");
+      return;
+    }
+    if (!executeTransaction) {
+      toast.error("Wallet does not support transactions");
+      return;
+    }
+    if (!envUsdcx || !envUsad) {
+      toast.error("Token IDs not configured", {
+        description: "Set NEXT_PUBLIC_USDCX_TOKEN_ID and NEXT_PUBLIC_USAD_TOKEN_ID for this deployment.",
+      });
+      return;
+    }
+
+    setConfiguring(true);
+    try {
+      toast.info("Configuring subscription payments on-chain...");
+      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_SUBS_PROGRAM_ID);
+      const result = await executeTransaction({
+        program: PASSMEET_SUBS_PROGRAM_ID,
+        function: "configure",
+        inputs: [address, envUsdcx, envUsad],
+        fee: 100_000,
+      });
+      const tempId = result?.transactionId;
+      if (!tempId) throw new Error("Transaction was not submitted.");
+
+      const confirm = await pollForTxHash(tempId, transactionStatus, {
+        program: PASSMEET_SUBS_PROGRAM_ID,
+        requestTransactionHistory,
+        historyBefore,
+      });
+      if (confirm.state !== "confirmed" || !confirm.txHash) {
+        throw new Error(
+          confirm.state === "rejected" ? "Configuration was rejected." :
+          confirm.state === "failed" ? "Configuration failed on-chain." :
+          "Configuration confirmation timed out."
+        );
+      }
+
+      toast.success("Subscriptions configured!", { description: `Tx: ${confirm.txHash.slice(0, 16)}...` });
+      const [treasury, usdcxId, usadId] = await Promise.all([
+        getSubscriptionTreasury(),
+        getSubscriptionTokenId(0),
+        getSubscriptionTokenId(1),
+      ]);
+      setSubsConfig({ treasury: treasury ?? null, usdcxId: usdcxId ?? null, usadId: usadId ?? null, loading: false });
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : "Failed to configure subscriptions";
+      toast.error(msg);
+    } finally {
+      setConfiguring(false);
+    }
+  };
+
+  useEffect(() => {
+    let cancelled = false;
+    const fetchTier = async () => {
       if (!address) {
         setTierLoading(false);
         setCurrentTier("Free");
+        setLatestHeight(null);
         return;
       }
       setTierLoading(true);
       try {
-        const sub = await getSubscription(address);
-        if (sub && sub.tier > 0 && sub.expiry > Math.floor(Date.now() / 1000)) {
+        const [sub, height] = await Promise.all([getSubscription(address), getLatestBlockHeight()]);
+        if (cancelled) return;
+        setLatestHeight(height);
+        if (sub && sub.tier > 0 && height != null && sub.end_height > height) {
           setCurrentTier(TIER_NAMES[sub.tier] ?? "Free");
-        } else {
-          const stored = localStorage.getItem("passmeet_subscription");
-          if (stored) {
-            try {
-              const parsed = JSON.parse(stored);
-              if (parsed.address === address) {
-                setCurrentTier(parsed.tier ?? "Free");
-              }
-            } catch {
-              setCurrentTier("Free");
-            }
-          } else {
-            setCurrentTier("Free");
-          }
-        }
-      } catch {
-        const stored = localStorage.getItem("passmeet_subscription");
-        if (stored) {
-          try {
-            const parsed = JSON.parse(stored);
-            if (parsed.address === address) setCurrentTier(parsed.tier ?? "Free");
-          } catch {
-            setCurrentTier("Free");
-          }
         } else {
           setCurrentTier("Free");
         }
+      } catch {
+        if (!cancelled) {
+          setCurrentTier("Free");
+          setLatestHeight(null);
+        }
       } finally {
-        setTierLoading(false);
+        if (!cancelled) setTierLoading(false);
       }
-    }
+    };
     fetchTier();
+    return () => {
+      cancelled = true;
+    };
   }, [address]);
 
   const tiers = [
     {
       name: "Free",
       id: 0,
-      price: "0",
-      priceLabel: "Aleo / mo",
       description: "For casual attendees",
       icon: Star,
       features: [
@@ -102,8 +226,6 @@ export default function SubscriptionPage() {
     {
       name: "Organizer Pro",
       id: 1,
-      price: "0.1",
-      priceLabel: "Aleo (tx fee)",
       description: "Perfect for event creators",
       icon: Zap,
       features: [
@@ -119,8 +241,6 @@ export default function SubscriptionPage() {
     {
       name: "Enterprise",
       id: 2,
-      price: "0.1",
-      priceLabel: "Aleo (tx fee)",
       description: "For large-scale conferences",
       icon: Crown,
       features: [
@@ -149,55 +269,115 @@ export default function SubscriptionPage() {
       toast.error("Wallet does not support transactions");
       return;
     }
+    if (!requestRecords) {
+      toast.error("Wallet does not support record requests");
+      return;
+    }
     if (tier.id === 0) return;
+
+    if (!subsConfig.treasury) {
+      toast.error("Subscription contract is not configured", {
+        description: "An admin must configure the treasury + token IDs on-chain before subscriptions can be purchased.",
+      });
+      return;
+    }
+
+    const rail: PaymentRail = selectedRailByTier[tier.id] ?? "credits";
+    const microPrice = SUB_PRICES_MICRO[tier.id]?.[rail] ?? 0;
+    if (microPrice <= 0) {
+      toast.error("This payment rail is not available for this tier.");
+      return;
+    }
+    if (!railConfigured(rail)) {
+      toast.error("Token rail not configured", {
+        description: `Set NEXT_PUBLIC_${rail.toUpperCase()}_TOKEN_ID for this deployment.`,
+      });
+      return;
+    }
 
     setLoading(tier.name);
     try {
-      toast.info(`Initiating Subscription to ${tier.name} on Aleo...`);
+      toast.info(`Subscribing to ${tier.name} with ${railLabel(rail)}...`);
 
+      const FEE_TX = 100_000;
       const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_SUBS_PROGRAM_ID);
+
+      let functionName: string;
+      let inputs: string[];
+
+      if (rail === "credits") {
+        const required = microPrice + FEE_TX;
+        const records = (await requestRecords(CREDITS_PROGRAM_ID, true)) ?? [];
+        const recordItem =
+          records.find((r) => (getMicrocreditsFromCreditsRecord(r) ?? 0) >= required) ??
+          records.find((r) => (getMicrocreditsFromCreditsRecord(r) ?? 0) >= microPrice) ??
+          null;
+        if (!recordItem) {
+          throw new Error(`Insufficient private balance. Need at least ${(required / 1_000_000).toFixed(2).replace(/\\.00$/, "")} Aleo in one credits record.`);
+        }
+        functionName = "subscribe_with_credits";
+        inputs = [`${tier.id}u8`, toWalletRecordInput(recordItem)];
+      } else {
+        // token_registry rail
+        if (!subsConfig.usdcxId || subsConfig.usdcxId === "0field" || !subsConfig.usadId || subsConfig.usadId === "0field") {
+          throw new Error("Token rails are not configured on-chain for the subscription contract.");
+        }
+
+        const tokenProgram = TOKEN_REGISTRY_PROGRAM_ID;
+        const tokenId = rail === "usdcx" ? envUsdcx : envUsad;
+        if (!tokenId) throw new Error("Missing token ID in env.");
+
+        const records = (await requestRecords(tokenProgram, true)) ?? [];
+        const recordItem = records.find((r) => {
+          const rid = getTokenIdFromTokenRecord(r);
+          const amt = getTokenAmountFromTokenRecord(r) ?? 0;
+          return rid === tokenId && amt >= microPrice;
+        });
+        if (!recordItem) {
+          throw new Error(`No ${railLabel(rail)} token record found with sufficient private balance.`);
+        }
+
+        functionName = "subscribe";
+        inputs = [`${tier.id}u8`, toWalletRecordInput(recordItem)];
+      }
+
       const result = await executeTransaction({
         program: PASSMEET_SUBS_PROGRAM_ID,
-        function: "subscribe",
-        inputs: [`${tier.id}u8`, "2592000u32"],
-        fee: 100000,
+        function: functionName,
+        inputs,
+        fee: FEE_TX,
       });
 
       const tempId = result?.transactionId;
       console.log("[PassMeet Subscription] subscribe: tx submitted", { tempId });
-      if (tempId) {
-        const confirm = await pollForTxHash(tempId, transactionStatus, {
-          program: PASSMEET_SUBS_PROGRAM_ID,
-          requestTransactionHistory,
-          historyBefore,
-        });
-        if (confirm.state !== "confirmed" || !confirm.txHash) {
-          throw new Error(
-            confirm.state === "rejected" ? "Subscription was rejected." :
-            confirm.state === "failed" ? "Subscription failed on-chain." :
-            "Subscription confirmation timed out. Check your wallet for status."
-          );
-        }
-        const txHash = confirm.txHash;
-        console.log("[PassMeet Subscription] subscribe: success", { onChainTxHash: txHash });
-        setCurrentTier(tier.name);
-        localStorage.setItem("passmeet_subscription", JSON.stringify({
-          tier: tier.name,
-          address,
-          timestamp: Date.now(),
-          txHash
-        }));
-        const explorerUrl = txHash ? getTransactionUrl(txHash) : null;
-        toast.success(`Subscribed to ${tier.name}!`, {
-          description: txHash ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.",
-          ...(explorerUrl && {
-            action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
-          })
-        });
-      } else {
-        console.log("[PassMeet Subscription] subscribe: no txId");
-        toast.error("Transaction was not confirmed");
+      if (!tempId) throw new Error("Transaction was not submitted.");
+
+      const confirm = await pollForTxHash(tempId, transactionStatus, {
+        program: PASSMEET_SUBS_PROGRAM_ID,
+        requestTransactionHistory,
+        historyBefore,
+      });
+      if (confirm.state !== "confirmed" || !confirm.txHash) {
+        throw new Error(
+          confirm.state === "rejected" ? "Subscription was rejected." :
+          confirm.state === "failed" ? "Subscription failed on-chain." :
+          "Subscription confirmation timed out. Check your wallet for status."
+        );
       }
+
+      const txHash = confirm.txHash;
+      setCurrentTier(tier.name);
+
+      const explorerUrl = getTransactionUrl(txHash);
+      toast.success(`Subscribed to ${tier.name}!`, {
+        description: explorerUrl ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.",
+        ...(explorerUrl && {
+          action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
+        })
+      });
+
+      const height = await getLatestBlockHeight();
+      setLatestHeight(height);
     } catch (error) {
       console.log("[PassMeet Subscription] subscribe: error", error);
       console.error(error);
