@@ -99,6 +99,26 @@ export async function getEventCounter(): Promise<number> {
   return count;
 }
 
+/** Fetch latest block height from Provable explorer REST. Returns null on failure. */
+export async function getLatestBlockHeight(): Promise<number | null> {
+  try {
+    const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/block/height/latest`;
+    const res = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
+    if (!res.ok) return null;
+    const data = (await res.json().catch(() => null)) as unknown;
+    if (typeof data === "number") return data;
+    if (typeof data === "string") {
+      const n = parseInt(data, 10);
+      return Number.isFinite(n) ? n : null;
+    }
+    const txt = await res.text().catch(() => "");
+    const n = parseInt(txt.replace(/\D/g, ""), 10);
+    return Number.isFinite(n) ? n : null;
+  } catch {
+    return null;
+  }
+}
+
 /**
  * Fetches a single event from the on-chain events mapping.
  */

@@ -4,7 +4,8 @@ const ALEO_JSON_RPC = "https://testnet3.aleorpc.com";
 
 export interface OnChainSubscription {
   tier: number;
-  expiry: number;
+  start_height: number;
+  end_height: number;
 }
 
 async function fetchSubsMappingValue(key: string): Promise<string | null> {
@@ -66,12 +67,15 @@ export async function getSubscription(
   if (!text) return null;
 
   const tierMatch = text.match(/tier:\s*(\d+)u8/);
-  const expiryMatch = text.match(/expiry:\s*(\d+)u32/);
+  const startHeightMatch = text.match(/start_height:\s*(\d+)u32/);
+  const endHeightMatch = text.match(/end_height:\s*(\d+)u32/);
+  const legacyExpiryMatch = text.match(/expiry:\s*(\d+)u32/);
 
   if (!tierMatch) return null;
 
   return {
     tier: parseInt(tierMatch[1], 10),
-    expiry: expiryMatch ? parseInt(expiryMatch[1], 10) : 0,
+    start_height: startHeightMatch ? parseInt(startHeightMatch[1], 10) : 0,
+    end_height: endHeightMatch ? parseInt(endHeightMatch[1], 10) : (legacyExpiryMatch ? parseInt(legacyExpiryMatch[1], 10) : 0),
   };
 }
