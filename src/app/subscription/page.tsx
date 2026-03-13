@@ -415,7 +415,7 @@ export default function SubscriptionPage() {
                 : subsConfig.treasury
                   ? `Treasury: ${subsConfig.treasury.slice(0, 10)}...${subsConfig.treasury.slice(-4)}`
                   : "Not configured yet (admin must configure treasury + token IDs)."}
-              {latestHeight != null ? ` · Latest height: ${latestHeight}` : ""}
+              {latestHeight != null ? ` - Latest height: ${latestHeight}` : ""}
             </p>
           </div>
           {!subsConfig.treasury && (
@@ -495,7 +495,7 @@ export default function SubscriptionPage() {
                   >
                     {(["credits", "usdcx", "usad"] as const).map((r) => (
                       <option key={r} value={r} disabled={!railConfigured(r)}>
-                        {railLabel(r)} · {formatMicro(SUB_PRICES_MICRO[tier.id]?.[r] ?? 0)}
+                        {railLabel(r)} - {formatMicro(SUB_PRICES_MICRO[tier.id]?.[r] ?? 0)}
                         {!railConfigured(r) ? " (needs config)" : ""}
                       </option>
                     ))}

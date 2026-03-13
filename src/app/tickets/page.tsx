@@ -288,7 +288,7 @@ export default function TicketsPage() {
                                 const disabled = !railConfigured(r);
                                 return (
                                   <option key={r} value={r} disabled={disabled}>
-                                    {railLabel(r)} · {formatMicro(micro)}
+                                    {railLabel(r)} - {formatMicro(micro)}
                                     {r === "credits" ? " Aleo" : ""}
                                     {!disabled ? "" : " (needs config)"}
                                   </option>

@@ -202,7 +202,7 @@ export default function OrganizerPage() {
     if (event.priceCredits > 0) parts.push(`${(event.priceCredits / 1_000_000).toFixed(2).replace(/\\.00$/, "")} Aleo`);
     if (event.priceUsdcx > 0) parts.push(`${(event.priceUsdcx / 1_000_000).toFixed(2).replace(/\\.00$/, "")} USDCx`);
     if (event.priceUsad > 0) parts.push(`${(event.priceUsad / 1_000_000).toFixed(2).replace(/\\.00$/, "")} USAD`);
-    return parts.join(" · ");
+    return parts.join(" - ");
   };
 
   return (
