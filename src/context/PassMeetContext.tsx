@@ -107,6 +107,15 @@ function mapWalletError(error: unknown): string {
   return (error as Error)?.message ?? "Something went wrong. Please try again.";
 }
 
+function bytesToBase64(bytes: Uint8Array): string {
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
 // ---------------------
 // Metadata helpers
 // ---------------------
@@ -235,31 +244,53 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     LOG("authenticateWithSignature: starting");
     try {
       if (!signMessage) {
-        LOG("authenticateWithSignature: no signMessage, connect-only");
-        setIsAuthenticated(true);
-        localStorage.setItem("passmeet_auth", JSON.stringify({
-          address,
-          timestamp: Date.now(),
-          method: "wallet-connect"
-        }));
-        return true;
+        setIsAuthenticated(false);
+        throw new Error("Wallet does not support message signing. Use Shield, Leo, Puzzle, or Fox wallet.");
       }
-      const message = `PassMeet Authentication\nTimestamp: ${Date.now()}\nAddress: ${address}`;
-      const signature = await signMessage(message);
-      if (!signature) {
+
+      const nonceRes = await fetch("/api/auth/nonce", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address }),
+      });
+      if (!nonceRes.ok) {
+        const err = (await nonceRes.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(err?.error || "Failed to request authentication nonce.");
+      }
+      const nonceData = (await nonceRes.json()) as { message?: unknown };
+      const message = typeof nonceData?.message === "string" ? nonceData.message : null;
+      if (!message) throw new Error("Invalid nonce response.");
+
+      const signatureBytes = await signMessage(message);
+      if (!signatureBytes) {
         LOG("authenticateWithSignature: rejected or failed");
+        setIsAuthenticated(false);
         return false;
       }
-      LOG("authenticateWithSignature: success (signed)");
-      setIsAuthenticated(true);
-      localStorage.setItem("passmeet_auth", JSON.stringify({
-        address,
-        timestamp: Date.now()
-      }));
+
+      const signatureBase64 = bytesToBase64(signatureBytes);
+      const verifyRes = await fetch("/api/auth/verify", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ address, signatureBase64 }),
+      });
+      if (!verifyRes.ok) {
+        const err = (await verifyRes.json().catch(() => null)) as { error?: string } | null;
+        throw new Error(err?.error || "Signature verification failed.");
+      }
+
+      const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
+      const session = (await sessionRes.json().catch(() => null)) as { authenticated?: boolean; address?: string } | null;
+      const ok = !!session?.authenticated && session?.address === address;
+      setIsAuthenticated(ok);
+      if (!ok) throw new Error("Session not established.");
+
+      LOG("authenticateWithSignature: success (server-verified)");
       return true;
     } catch (error) {
       LOG("authenticateWithSignature: error", error);
       console.error("Authentication failed:", error);
+      setIsAuthenticated(false);
       return false;
     }
   }, [address, signMessage]);
@@ -976,22 +1007,34 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
   // ---- Mount / wallet change ----
   useEffect(() => {
-    if (address) {
+    let cancelled = false;
+    const run = async () => {
+      if (!address) {
+        setIsAuthenticated(false);
+        setMyTickets([]);
+        // Best-effort: clear server session when wallet disconnects.
+        fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
+        return;
+      }
+
       const saved = getTicketsFromLocalStorage(address);
       setMyTickets(saved);
       pendingOptimisticTicketRef.current = null;
       LOG("wallet connected: refreshing data", { address: address.slice(0, 12) + "...", savedTickets: saved.length });
-      const stored = localStorage.getItem("passmeet_auth");
-      if (stored) {
-        try {
-          const parsed = JSON.parse(stored);
-          if (parsed.address === address && Date.now() - parsed.timestamp < 24 * 60 * 60 * 1000) {
-            setIsAuthenticated(true);
-          }
-        } catch {
-          // ignore
+
+      // Restore auth from HttpOnly session cookie (server-verified). Never trust localStorage.
+      try {
+        const sessionRes = await fetch("/api/auth/session", { cache: "no-store" });
+        const session = (await sessionRes.json().catch(() => null)) as { authenticated?: boolean; address?: string } | null;
+        const ok = !!session?.authenticated && session?.address === address;
+        if (!cancelled) setIsAuthenticated(ok);
+        if (session?.authenticated && session?.address && session.address !== address) {
+          fetch("/api/auth/logout", { method: "POST" }).catch(() => {});
         }
+      } catch {
+        if (!cancelled) setIsAuthenticated(false);
       }
+
       const doRefresh = async () => {
         await refreshEvents();
         let count = await refreshTickets();
@@ -1004,10 +1047,12 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         LOG("initial refresh error", { message: (err as Error)?.message, stack: (err as Error)?.stack });
         console.error("[PassMeet] initial refresh error", err);
       });
-    } else {
-      setIsAuthenticated(false);
-      setMyTickets([]);
-    }
+    };
+
+    run();
+    return () => {
+      cancelled = true;
+    };
   }, [address, refreshEvents, refreshTickets]);
 
     return (

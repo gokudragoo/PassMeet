@@ -1,62 +1,114 @@
 import { NextResponse } from "next/server";
 import { cookies } from "next/headers";
+import {
+  getPassMeetAuthSecret,
+  PASSMEET_NONCE_COOKIE,
+  PASSMEET_SESSION_COOKIE,
+  signToken,
+  verifyToken,
+  type SignedTokenPayload,
+} from "@/lib/auth";
+
+export const runtime = "nodejs";
 
 const SESSION_TTL_MS = 24 * 60 * 60 * 1000; // 24h
 
+type NoncePayload = SignedTokenPayload & {
+  address: string;
+  nonce: string;
+  message: string;
+};
+
+type SessionPayload = SignedTokenPayload & {
+  address: string;
+  iat: number;
+};
+
+async function getSdk() {
+  const network = process.env.NEXT_PUBLIC_ALEO_NETWORK || "testnet";
+  if (network === "mainnet") return import("@provablehq/sdk/mainnet.js");
+  return import("@provablehq/sdk/testnet.js");
+}
+
 export async function POST(request: Request) {
+  const cookieStore = await cookies();
   try {
-    const { address, signature } = await request.json();
-    if (!address || !signature || typeof address !== "string" || typeof signature !== "string") {
-      return NextResponse.json({ error: "Address and signature required" }, { status: 400 });
+    const { address, signatureBase64 } = (await request.json()) as {
+      address?: unknown;
+      signatureBase64?: unknown;
+    };
+    if (!address || typeof address !== "string") {
+      return NextResponse.json({ error: "Address required" }, { status: 400 });
     }
-    const cookieStore = await cookies();
-    const nonceToken = cookieStore.get("passmeet_nonce")?.value;
+    if (!signatureBase64 || typeof signatureBase64 !== "string") {
+      return NextResponse.json({ error: "signatureBase64 required" }, { status: 400 });
+    }
+
+    const nonceToken = cookieStore.get(PASSMEET_NONCE_COOKIE)?.value;
     if (!nonceToken) {
       return NextResponse.json({ error: "No nonce found. Request a new one." }, { status: 401 });
     }
-    const [payloadB64] = nonceToken.split(".");
-    const payload = JSON.parse(
-      Buffer.from(payloadB64, "base64url").toString("utf8")
-    );
-    if (payload.exp < Date.now()) {
-      cookieStore.delete("passmeet_nonce");
-      return NextResponse.json({ error: "Nonce expired" }, { status: 401 });
+
+    const secret = getPassMeetAuthSecret();
+    const nonceRes = verifyToken<NoncePayload>(nonceToken, secret);
+    if ("error" in nonceRes) {
+      cookieStore.delete(PASSMEET_NONCE_COOKIE);
+      return NextResponse.json({ error: nonceRes.error }, { status: 401 });
     }
-    if (payload.address !== address) {
+
+    if (nonceRes.payload.address !== address) {
       return NextResponse.json({ error: "Address mismatch" }, { status: 401 });
     }
-    // Signature verification is done client-side via wallet; we trust the client
-    // for session creation. Production would verify the signature server-side.
-    cookieStore.delete("passmeet_nonce");
-    const secret = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET;
-    if (!secret) {
-      return NextResponse.json({ error: "Auth not configured" }, { status: 500 });
+
+    const { Address, Signature } = await getSdk();
+
+    let signatureBytes: Uint8Array;
+    try {
+      signatureBytes = Buffer.from(signatureBase64, "base64");
+    } catch {
+      return NextResponse.json({ error: "Invalid signature encoding" }, { status: 400 });
     }
-    const sessionPayload = JSON.stringify({
+
+    let signature: InstanceType<typeof Signature>;
+    try {
+      signature = Signature.fromBytesLe(signatureBytes);
+    } catch {
+      return NextResponse.json({ error: "Invalid signature bytes" }, { status: 400 });
+    }
+
+    let aleoAddress: InstanceType<typeof Address>;
+    try {
+      aleoAddress = Address.from_string(address);
+    } catch {
+      return NextResponse.json({ error: "Invalid address" }, { status: 400 });
+    }
+
+    const msgBytes = new TextEncoder().encode(nonceRes.payload.message);
+    const ok = aleoAddress.verify(msgBytes, signature);
+    if (!ok) {
+      return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
+    }
+
+    cookieStore.delete(PASSMEET_NONCE_COOKIE);
+
+    const sessionPayload: SessionPayload = {
       address,
-      timestamp: Date.now(),
+      iat: Date.now(),
       exp: Date.now() + SESSION_TTL_MS,
-    });
-    const encoder = new TextEncoder();
-    const key = await crypto.subtle.importKey(
-      "raw",
-      encoder.encode(secret.slice(0, 32).padEnd(32, "0")),
-      { name: "HMAC", hash: "SHA-256" },
-      false,
-      ["sign"]
-    );
-    const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(sessionPayload));
-    const sessionToken = `${Buffer.from(encoder.encode(sessionPayload)).toString("base64url")}.${Buffer.from(sig).toString("base64url")}`;
-    cookieStore.set("passmeet_session", sessionToken, {
+    };
+    const sessionToken = signToken(sessionPayload, secret);
+    cookieStore.set(PASSMEET_SESSION_COOKIE, sessionToken, {
       httpOnly: true,
       secure: process.env.NODE_ENV === "production",
       sameSite: "lax",
-      maxAge: 86400,
+      maxAge: Math.floor(SESSION_TTL_MS / 1000),
       path: "/",
     });
+
     return NextResponse.json({ success: true });
   } catch (error) {
     console.error("[PassMeet Auth] verify error:", error);
+    cookieStore.delete(PASSMEET_NONCE_COOKIE);
     return NextResponse.json({ error: "Verification failed" }, { status: 500 });
   }
 }
