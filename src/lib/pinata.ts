@@ -8,7 +8,7 @@ const FALLBACK_GATEWAYS = [
   "https://dweb.link",
 ];
 
-const FETCH_TIMEOUT_MS = 3000;
+const FETCH_TIMEOUT_MS = 2000;
 
 export interface EventMetadata {
   id: string;

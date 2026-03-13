@@ -47,6 +47,9 @@ program passmeet_v1_7788.aleo {
         Mapping::set(event_counter, 0u8, next_id);
     }
 
+    // For paid events (event.price > 0): the client must first execute credits.aleo/transfer_private
+    // to send event.price (microcredits) to event.organizer, then call mint_ticket.
+    // For free events, the client calls only mint_ticket.
     async transition mint_ticket(
         public event_id: u64,
         public ticket_id: u64

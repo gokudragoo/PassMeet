@@ -25,11 +25,19 @@ import { Badge } from "@/components/ui/badge";
 import { usePassMeet, Ticket } from "@/context/PassMeetContext";
 import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
 
+function getWalletHint(walletName: string): string {
+  const name = (walletName || "").toLowerCase();
+  if (name.includes("shield")) return "Shield usually confirms in seconds.";
+  if (name.includes("leo")) return "Leo may take 1–2 minutes to confirm.";
+  return "Transaction submitted. Confirmation may take up to 2 minutes.";
+}
+
 export default function TicketsPage() {
-  const { address } = useWallet();
+  const { address, wallet } = useWallet();
   const { events, myTickets, isLoading, buyTicket, verifyEntry, refreshEvents, refreshTickets, isAuthenticated } = usePassMeet();
   const [loading, setLoading] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState("available");
+  const walletName = (wallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ?? (wallet as { name?: string })?.name ?? "";
 
   const handleBuyTicket = async (eventId: string) => {
     console.log("[PassMeet Tickets] handleBuyTicket: start", { eventId });
@@ -45,7 +53,7 @@ export default function TicketsPage() {
     setLoading(`buy-${eventId}`);
     try {
       toast.info("Minting private ticket on Aleo...", {
-        description: "Generating ZK proof for anonymous ownership"
+        description: walletName ? getWalletHint(walletName) : "Generating ZK proof for anonymous ownership"
       });
 
       const event = events.find(e => e.id === eventId);
@@ -70,6 +78,14 @@ export default function TicketsPage() {
         setActiveTab("tickets");
         setTimeout(() => refreshTickets({ silent: true }), 8000);
         setTimeout(() => refreshTickets({ silent: true }), 30000);
+      } else {
+        toast.error("Transaction was not submitted", {
+          description: "If you approved in your wallet, your ticket may still be minting.",
+          action: {
+            label: "Refresh tickets",
+            onClick: () => refreshTickets()
+          }
+        });
       }
     } catch (error) {
       console.log("[PassMeet Tickets] buyTicket: error", error);
@@ -194,11 +210,15 @@ export default function TicketsPage() {
                   className="group flex flex-col overflow-hidden rounded-2xl border border-white/10 bg-white/5 transition-all hover:border-primary/50 hover:bg-white/[0.08]"
                 >
                   <div className="relative h-48 w-full overflow-hidden">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
                     <img src={event.image} alt={event.name} className="h-full w-full object-cover transition-transform duration-500 group-hover:scale-110" />
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
                     <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
-                      <Badge className="bg-primary text-black font-bold border-none">
+                      <Badge className="bg-primary text-black font-bold border-none" title={event.price > 0 ? "Paid to organizer when you mint" : "Free event"}>
                         {event.price} Aleo
+                        {event.price > 0 && (
+                          <span className="ml-1 opacity-80 text-[10px] font-normal">(pay on mint)</span>
+                        )}
                       </Badge>
                       <span className="text-xs text-white/70 font-medium bg-black/50 backdrop-blur-md px-2 py-1 rounded-md flex items-center gap-1">
                         <Users className="h-3 w-3" />

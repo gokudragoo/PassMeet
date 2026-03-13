@@ -56,7 +56,7 @@ export function AleoWalletProvider({ children }: { children: ReactNode }) {
       autoConnect={true}
       decryptPermission={DecryptPermission.OnChainHistory}
       programs={programs}
-      onError={(error) => console.error("Wallet error:", error.message)}
+      onError={(error) => console.error("[PassMeet] Wallet error:", error.message, error)}
     >
       <WalletModalProvider>
         <PassMeetProvider>

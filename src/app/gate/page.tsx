@@ -261,7 +261,7 @@ export default function GatePage() {
                         href={verificationData?.txHash ? (getTransactionUrl(verificationData.txHash) ?? "#") : "#"}
                         target="_blank"
                         rel="noopener noreferrer"
-                        className={`font-mono text-xs flex items-center gap-1 ${getTransactionUrl(verificationData.txHash) ? "text-primary hover:underline" : "text-muted-foreground cursor-default"}`}
+                        className={`font-mono text-xs flex items-center gap-1 ${verificationData && getTransactionUrl(verificationData.txHash) ? "text-primary hover:underline" : "text-muted-foreground cursor-default"}`}
                       >
                         {verificationData?.txHash?.slice(0, 16)}...
                         <ExternalLink className="h-3 w-3" />

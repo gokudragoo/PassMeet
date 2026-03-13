@@ -11,6 +11,12 @@ import { Plus, Users, Calendar, Wallet, CheckCircle2, AlertCircle, Loader2, Refr
 import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
 import { Badge } from "@/components/ui/badge";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipTrigger,
+  TooltipProvider,
+} from "@/components/ui/tooltip";
 import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
 
 export default function OrganizerPage() {
@@ -173,17 +179,28 @@ export default function OrganizerPage() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="price" className="text-zinc-400">Price (Aleo)</Label>
-                  <Input
-                    id="price"
-                    type="number"
-                    step="0.01"
-                    placeholder="0.5"
-                    value={price}
-                    onChange={(e) => setPrice(e.target.value)}
-                    className="bg-black/40 border-white/10 text-white focus:border-primary"
-                    required
-                  />
+                  <TooltipProvider>
+                    <Tooltip>
+                      <TooltipTrigger asChild>
+                        <div className="space-y-1">
+                          <Label htmlFor="price" className="text-zinc-400">Price (Aleo)</Label>
+                          <Input
+                            id="price"
+                            type="number"
+                            step="0.01"
+                            placeholder="0.5"
+                            value={price}
+                            onChange={(e) => setPrice(e.target.value)}
+                            className="bg-black/40 border-white/10 text-white focus:border-primary"
+                            required
+                          />
+                        </div>
+                      </TooltipTrigger>
+                      <TooltipContent side="top" className="max-w-xs">
+                        <p>Shown to attendees. Paid to you in Aleo credits when they mint a ticket.</p>
+                      </TooltipContent>
+                    </Tooltip>
+                  </TooltipProvider>
                 </div>
               </div>
               <Button

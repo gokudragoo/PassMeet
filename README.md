@@ -106,6 +106,7 @@ PassMeet solves this by making tickets **private by default**, entry verificatio
 | **Network** | RPC/Explorer paths use `ALEO_NETWORK` (testnet/mainnet) |
 | **UX** | Gate page: dynamic network label, error UX with "Refresh Tickets & Try Again"; auto-refresh on load |
 | **Production** | Favicon & Apple icon; Open Graph & Twitter metadata; 404 page; loading states |
+| **Payments** | Paid events: credits.aleo `transfer_private` to organizer before mint; two-step flow (pay then mint) |
 
 ### Feedback Incorporated
 
@@ -119,11 +120,11 @@ PassMeet solves this by making tickets **private by default**, entry verificatio
 
 ### Next Wave Goals
 
-- [ ] the speed or wbe is slwo we will fix and make it fast 
-- [ ] Subscription payment flow (15/50 ALEO plan pricing in contract) update the conrtact 
-- [ ] add qr code genrator 
+- [ ] Subscription payment flow (15/50 ALEO plan pricing in contract) update the contract
+- [ ] QR code generator for gate verification
 - [ ] Event discovery and search (filter by date, location)
 - [ ] Organizer analytics (aggregate stats without identity exposure)
+- [ ] USDCx / USAD token payment option (requires token contract integration)
 
 ## Tech Stack
 
@@ -215,12 +216,32 @@ NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID=passmeet_subs_7788.aleo
 
 ## Deploy Contracts
 
+Build and deploy Leo contracts. Requires [Leo CLI](https://docs.leo-lang.org/) installed.
+
 ```bash
-chmod +x deploy-all.sh
-./deploy-all.sh
+# Build contracts (no deploy)
+npm run build:contracts
+
+# Deploy to Aleo testnet (requires funded account)
+npm run deploy:contracts
 ```
 
-> Requires Leo 3.4.0 and WSL/Linux environment
+Or use the shell scripts directly (bash/WSL):
+
+```bash
+chmod +x scripts/build-leo.sh scripts/deploy-leo.sh
+./scripts/build-leo.sh
+./scripts/deploy-leo.sh
+```
+
+## Production Readiness and Payment
+
+| Area | Status |
+|------|--------|
+| **Mint** | Retries and longer polling address finicky mint and Leo slowness; Shield users get clearer errors if tx is not submitted. |
+| **Payments** | Paid tickets use **credits.aleo**: the app first runs `transfer_private` to the organizer, then `mint_ticket`. Payment is not inside the passmeet contract because Aleo does not allow one program to call another's state-changing transition. |
+| **Contracts** | Use `npm run build:contracts` and `npm run deploy:contracts`; Leo CLI required. |
+| **USDCx/USAD** | Documented as future work (separate token integration). |
 
 ## Production Deployment
 

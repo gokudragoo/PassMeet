@@ -2,7 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
-import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID } from "@/lib/aleo";
+import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, CREDITS_PROGRAM_ID } from "@/lib/aleo";
 import { getEventCounter, getEvent } from "@/lib/aleo-rpc";
 
 export interface Event {
@@ -64,6 +64,40 @@ const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1492684223066-81342ee5f
 const LOG = (msg: string, data?: unknown) => {
   console.log(`[PassMeet] ${msg}`, data ?? "");
 };
+
+/** Parse microcredits amount from a credits.aleo record (string or object). Returns null if not found. */
+function getMicrocreditsFromCreditsRecord(recordItem: unknown): number | null {
+  try {
+    const str = typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem);
+    const match = str.match(/microcredits["\s:]+(\d+)u64/);
+    if (match) return parseInt(match[1], 10);
+    const record = typeof recordItem === "string" ? JSON.parse(recordItem) : recordItem;
+    const data = record?.data ?? record?.plaintext ?? record;
+    const raw = data?.microcredits ?? data?.microcredits?.value ?? record?.microcredits;
+    if (raw != null) return typeof raw === "number" ? raw : parseInt(String(raw).replace(/\D/g, ""), 10) || null;
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+/** Map common wallet/chain errors to user-friendly messages. */
+function mapWalletError(error: unknown): string {
+  const msg = (error as Error)?.message?.toLowerCase() ?? "";
+  if (msg.includes("reject") || msg.includes("denied") || msg.includes("user denied")) {
+    return "Transaction was rejected. Please approve in your wallet to continue.";
+  }
+  if (msg.includes("insufficient") || msg.includes("balance") || msg.includes("not enough")) {
+    return "Insufficient balance. You need Aleo credits for fees (~0.025). Get testnet tokens from a faucet.";
+  }
+  if (msg.includes("authorization") || msg.includes("utxo")) {
+    return "Your wallet needs at least 2 separate records (UTXOs) with Aleo credits—one for the transaction and one for the fee (~0.025). Try splitting your balance or getting more testnet tokens.";
+  }
+  if (msg.includes("not_granted") || msg.includes("not granted")) {
+    return "Record access was denied. Disconnect your wallet and reconnect, then approve record access for this app.";
+  }
+  return (error as Error)?.message ?? "Something went wrong. Please try again.";
+}
 
 // ---------------------
 // Metadata helpers
@@ -150,16 +184,19 @@ function isOnChainTxHash(id: string): boolean {
   return typeof id === "string" && id.startsWith("at1") && id.length >= 61;
 }
 
-/** Poll for final ON-CHAIN transaction ID (at1...). Never returns temp UUID - only valid explorer IDs. */
+/** Poll for final ON-CHAIN transaction ID (at1...). Adaptive: 1s for first 10 attempts, then 2s (Leo can take 2+ min). */
 async function pollForTxHash(
   tempId: string,
   transactionStatus: (id: string) => Promise<{ status: string; transactionId?: string; error?: string }>,
-  maxAttempts = 45
+  maxAttempts = 90,
+  firstPhaseAttempts = 10,
+  firstPhaseDelayMs = 1000,
+  secondPhaseDelayMs = 2000
 ): Promise<string | null> {
   for (let i = 0; i < maxAttempts; i++) {
-    await new Promise((r) => setTimeout(r, 1500));
+    const delay = i < firstPhaseAttempts ? firstPhaseDelayMs : secondPhaseDelayMs;
+    await new Promise((r) => setTimeout(r, delay));
     const res = await transactionStatus(tempId);
-    // Only return if we have the real on-chain hash (at1...), not temp UUID
     if (res.transactionId && isOnChainTxHash(res.transactionId)) {
       return res.transactionId;
     }
@@ -172,13 +209,15 @@ async function pollForTxHash(
 }
 
 export function PassMeetProvider({ children }: PassMeetProviderProps) {
-  const { address, signMessage, executeTransaction, transactionStatus, requestRecords } = useWallet();
+  const { address, signMessage, executeTransaction, transactionStatus, requestRecords, wallet } = useWallet();
+  const walletName = (wallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ?? (wallet as { name?: string })?.name ?? "";
   const [events, setEvents] = useState<Event[]>([]);
   const [myTickets, setMyTickets] = useState<Ticket[]>([]);
-  const [isLoading, setIsLoading] = useState(false);
   const [isDataLoading, setIsDataLoading] = useState(false);
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const pendingOptimisticTicketRef = useRef<{ address: string; ticket: Ticket } | null>(null);
+  const refreshTicketsDebounceRef = useRef<{ lastCall: number; lastCount: number }>({ lastCall: 0, lastCount: 0 });
+  const REFRESH_TICKETS_DEBOUNCE_MS = 500;
 
   // ---- Authentication ----
   const authenticateWithSignature = useCallback(async (): Promise<boolean> => {
@@ -300,6 +339,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     if (!address || !requestRecords) return 0;
 
     const silent = opts?.silent ?? false;
+    const now = Date.now();
+    if (silent && now - refreshTicketsDebounceRef.current.lastCall < REFRESH_TICKETS_DEBOUNCE_MS) {
+      return refreshTicketsDebounceRef.current.lastCount;
+    }
+    refreshTicketsDebounceRef.current.lastCall = now;
     LOG("refreshTickets: starting...", { address: address.slice(0, 12) + "...", silent });
     if (!silent) setIsDataLoading(true);
     try {
@@ -381,8 +425,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             const data = record?.data ?? record?.plaintext ?? record ?? recordItem;
             const rawEventId = data?.event_id?.value ?? data?.event_id ?? data?.eventId ?? record?.event_id ?? record?.eventId;
             const rawTicketId = data?.ticket_id?.value ?? data?.ticket_id ?? data?.ticketId ?? record?.ticket_id ?? record?.ticketId;
-            let eventIdRaw = extractU64(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
-            let ticketIdRaw = extractU64(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
+            const eventIdRaw = extractU64(rawEventId) ?? (rawEventId != null ? String(rawEventId).replace(/u64|\.private/g, "").trim() : null);
+            const ticketIdRaw = extractU64(rawTicketId) ?? (rawTicketId != null ? String(rawTicketId).replace(/u64|\.private/g, "").trim() : null);
             if (eventIdRaw && ticketIdRaw) return { eventId: eventIdRaw, ticketId: ticketIdRaw };
             const str = typeof recordItem === "string" ? recordItem : JSON.stringify(recordItem);
             const eventMatch = str.match(/event_id["\s:]+(\d+)u64/);
@@ -445,6 +489,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         console.log("[PassMeet] refreshTickets: merge result", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
         return merged;
       });
+      refreshTicketsDebounceRef.current.lastCount = tickets.length;
       return tickets.length;
     } catch (error) {
       const err = error as Error;
@@ -536,7 +581,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     } catch (error) {
       LOG("createEvent: error", error);
       console.error("Failed to create event:", error);
-      throw error;
+      throw new Error(mapWalletError(error));
     }
   }, [address, executeTransaction, transactionStatus]);
 
@@ -544,7 +589,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const buyTicket = useCallback(async (event: Event): Promise<string | null> => {
     if (!address || !executeTransaction) return null;
 
-    LOG("buyTicket: starting", { eventId: event.id, eventName: event.name });
+    LOG("buyTicket: starting", { eventId: event.id, eventName: event.name, price: event.price });
     try {
       const eventIdNum = parseInt(event.id, 10);
       if (isNaN(eventIdNum)) {
@@ -561,17 +606,77 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
 
       const nextTicketId = onChainEvent.ticket_count + 1;
+      const priceMicro = Math.floor(event.price * 1_000_000);
+      const FEE_MINT = 100_000;
+      const FEE_TRANSFER = 100_000;
+
+      // Paid event: transfer credits to organizer first, then mint
+      if (event.price > 0 && requestRecords && event.organizerAddress) {
+        const requiredCredits = priceMicro + FEE_TRANSFER + FEE_MINT;
+        let creditsRecords: unknown[] = [];
+        try {
+          creditsRecords = (await requestRecords(CREDITS_PROGRAM_ID, true)) ?? [];
+        } catch (e) {
+          LOG("buyTicket: requestRecords(credits) failed", (e as Error)?.message);
+          throw new Error("Could not read your Aleo credits. Approve record access for credits.aleo and try again.");
+        }
+        const recordItem = creditsRecords.find((r) => (getMicrocreditsFromCreditsRecord(r) ?? 0) >= requiredCredits);
+        if (!recordItem) {
+          throw new Error(
+            `Insufficient private balance. You need at least ${(requiredCredits / 1_000_000).toFixed(2)} Aleo in a single credits record to pay for this ticket (${event.price} Aleo + fees).`
+          );
+        }
+        let creditRecordInput: string;
+        if (typeof recordItem === "string") {
+          creditRecordInput = recordItem;
+        } else {
+          const r = recordItem as Record<string, unknown>;
+          const str =
+            (typeof r?.plaintext === "string" ? r.plaintext : null) ??
+            (typeof r?.ciphertext === "string" ? r.ciphertext : null) ??
+            (typeof r?.record === "string" ? r.record : null);
+          if (typeof str === "string" && str.length > 10) {
+            creditRecordInput = str;
+          } else {
+            creditRecordInput = JSON.stringify(recordItem);
+          }
+        }
+        LOG("buyTicket: executing payment to organizer", { organizer: event.organizerAddress.slice(0, 12) + "...", priceMicro });
+        const payResult = (await executeTransaction({
+          program: CREDITS_PROGRAM_ID,
+          function: "transfer_private",
+          inputs: [creditRecordInput, event.organizerAddress, `${priceMicro}u64`],
+          fee: FEE_TRANSFER,
+        })) ?? null;
+        const payTempId = payResult?.transactionId ?? null;
+        if (!payTempId) {
+          throw new Error("Payment transaction was not submitted. Please try again.");
+        }
+        const payTxHash = await pollForTxHash(payTempId, transactionStatus);
+        if (!payTxHash) {
+          throw new Error("Payment confirmation timed out. Your balance may have been deducted; check your wallet. You can retry minting.");
+        }
+        LOG("buyTicket: payment confirmed", { payTxHash });
+      }
+
       LOG("buyTicket: minting", { eventIdNum, nextTicketId });
 
-      const result = await executeTransaction({
+      const txPayload = {
         program: PASSMEET_V1_PROGRAM_ID,
         function: "mint_ticket",
         inputs: [`${eventIdNum}u64`, `${nextTicketId}u64`],
         fee: 100_000,
-      });
+      };
+      let result: { transactionId?: string } | null = null;
+      for (let attempt = 0; attempt < 3; attempt++) {
+        result = (await executeTransaction(txPayload)) ?? null;
+        if (result?.transactionId) break;
+        LOG("buyTicket: no transactionId from wallet (Shield/Leo edge case), retry", { attempt: attempt + 1 });
+        if (attempt < 2) await new Promise((r) => setTimeout(r, 1500));
+      }
 
-      const tempId = result?.transactionId;
-      LOG("buyTicket: tx submitted", { tempId });
+      const tempId = result?.transactionId ?? null;
+      LOG("buyTicket: tx submitted", { tempId, walletName: walletName || "unknown" });
       if (tempId) {
         const txHash = await pollForTxHash(tempId, transactionStatus);
         LOG("buyTicket: tx confirmed", { tempId, txHash });
@@ -613,9 +718,9 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     } catch (error) {
       LOG("buyTicket: error", error);
       console.error("Failed to buy ticket:", error);
-      throw error;
+      throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus, refreshTickets, refreshEvents]);
+  }, [address, executeTransaction, transactionStatus, requestRecords, refreshTickets, refreshEvents, walletName]);
 
   // ---- Verify Entry ----
   const verifyEntry = useCallback(async (ticket: Ticket): Promise<string | null> => {
@@ -782,7 +887,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     } catch (error) {
       LOG("verifyEntry: error", error);
       console.error("Failed to verify entry:", error);
-      throw error;
+      throw new Error(mapWalletError(error));
     }
   }, [address, executeTransaction, transactionStatus, requestRecords]);
 

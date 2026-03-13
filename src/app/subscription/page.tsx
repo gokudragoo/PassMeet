@@ -226,7 +226,7 @@ export default function SubscriptionPage() {
         </motion.div>
         <h1 className="text-4xl font-bold text-white md:text-6xl">Choose Your Plan</h1>
         <p className="mt-4 text-lg text-muted-foreground">
-          Unlock the full power of privacy-preserving events on Aleo.
+          {tierLoading ? "Loading your plan..." : "Unlock the full power of privacy-preserving events on Aleo."}
         </p>
       </div>
 
@@ -347,6 +347,7 @@ export default function SubscriptionPage() {
             </div>
           </div>
           <div className="relative aspect-video rounded-2xl overflow-hidden border border-white/10">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
             <img 
               src="https://images.unsplash.com/photo-1551434678-e076c223a692?q=80&w=1200&auto=format&fit=crop" 
               className="h-full w-full object-cover opacity-60" 

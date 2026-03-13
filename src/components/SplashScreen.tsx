@@ -3,14 +3,23 @@
 import { useState, useEffect } from "react";
 import { motion } from "framer-motion";
 import { Ticket, ShieldCheck, Loader2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
 
 interface SplashScreenProps {
   onComplete: () => void;
 }
 
+const SPLASH_SKIP_AFTER_MS = 2000;
+
 export function SplashScreen({ onComplete }: SplashScreenProps) {
   const [progress, setProgress] = useState(0);
   const [loadingText, setLoadingText] = useState("Initializing...");
+  const [canSkip, setCanSkip] = useState(false);
+
+  useEffect(() => {
+    const t = setTimeout(() => setCanSkip(true), SPLASH_SKIP_AFTER_MS);
+    return () => clearTimeout(t);
+  }, []);
 
   useEffect(() => {
     const texts = [
@@ -110,10 +119,17 @@ export function SplashScreen({ onComplete }: SplashScreenProps) {
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ delay: 1 }}
-        className="absolute bottom-8 flex items-center gap-2 text-xs text-muted-foreground"
+        className="absolute bottom-8 flex flex-col items-center gap-4"
       >
-        <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
-        Powered by Aleo Zero-Knowledge Proofs
+        {canSkip && (
+          <Button variant="ghost" size="sm" className="text-muted-foreground" onClick={onComplete}>
+            Skip
+          </Button>
+        )}
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <span className="h-2 w-2 rounded-full bg-primary animate-pulse" />
+          Powered by Aleo Zero-Knowledge Proofs
+        </div>
       </motion.div>
     </motion.div>
   );

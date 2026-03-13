@@ -6,7 +6,7 @@ const LOG = (msg: string, data?: unknown) => {
 };
 
 let eventsCache: { events: EventMetadata[]; ts: number } | null = null;
-const CACHE_TTL_MS = 60_000; // 60 seconds
+const CACHE_TTL_MS = 30_000; // 30 seconds
 
 export async function GET() {
   try {
