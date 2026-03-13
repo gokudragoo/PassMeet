@@ -8,6 +8,9 @@ export interface OnChainEventInfo {
   capacity: number;
   ticket_count: number;
   price: number;
+  price_credits: number;
+  price_usdcx: number;
+  price_usad: number;
 }
 
 /**
@@ -110,26 +113,35 @@ export async function getEvent(eventId: number): Promise<OnChainEventInfo | null
 
 /**
  * Parses Aleo EventInfo struct string into OnChainEventInfo.
- * The API returns Aleo struct notation like:
- *   { id: 1u64, organizer: aleo1..., capacity: 2u32, ticket_count: 0u32, price: 100000u64 }
+ * Supports both legacy (price) and new (price_credits, price_usdcx, price_usad) formats.
  */
 function parseEventInfo(raw: string, eventId: number): OnChainEventInfo | null {
   const trimmed = raw.trim();
 
-  // Use regex to extract fields from Aleo struct notation
   const idMatch = trimmed.match(/id:\s*(\d+)u64/);
   const organizerMatch = trimmed.match(/organizer:\s*(aleo1[a-z0-9]+)/);
   const capacityMatch = trimmed.match(/capacity:\s*(\d+)u32/);
   const ticketCountMatch = trimmed.match(/ticket_count:\s*(\d+)u32/);
   const priceMatch = trimmed.match(/price:\s*(\d+)u64/);
+  const priceCreditsMatch = trimmed.match(/price_credits:\s*(\d+)u128/);
+  const priceUsdcxMatch = trimmed.match(/price_usdcx:\s*(\d+)u128/);
+  const priceUsadMatch = trimmed.match(/price_usad:\s*(\d+)u128/);
 
-  if (!capacityMatch || !priceMatch) return null;
+  if (!capacityMatch) return null;
+
+  const priceCredits = priceCreditsMatch ? parseInt(priceCreditsMatch[1], 10) : (priceMatch ? parseInt(priceMatch[1], 10) : 0);
+  const priceUsdcx = priceUsdcxMatch ? parseInt(priceUsdcxMatch[1], 10) : 0;
+  const priceUsad = priceUsadMatch ? parseInt(priceUsadMatch[1], 10) : 0;
+  const price = priceMatch ? parseInt(priceMatch[1], 10) : priceCredits;
 
   return {
     id: idMatch ? parseInt(idMatch[1], 10) : eventId,
     organizer: organizerMatch ? organizerMatch[1] : "",
     capacity: parseInt(capacityMatch[1], 10),
     ticket_count: ticketCountMatch ? parseInt(ticketCountMatch[1], 10) : 0,
-    price: parseInt(priceMatch[1], 10),
+    price,
+    price_credits: priceCredits,
+    price_usdcx: priceUsdcx,
+    price_usad: priceUsad,
   };
 }

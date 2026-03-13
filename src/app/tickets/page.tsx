@@ -65,12 +65,9 @@ export default function TicketsPage() {
       const txId = await buyTicket(event);
 
       if (txId) {
-        console.log("[PassMeet Tickets] buyTicket: success", { txId: txId === "PENDING" ? "confirming" : txId });
-        const explorerUrl = txId !== "PENDING" ? getTransactionUrl(txId) : null;
+        const explorerUrl = getTransactionUrl(txId);
         toast.success("Ticket minted successfully!", {
-          description: explorerUrl
-            ? `Transaction: ${txId.slice(0, 16)}...`
-            : "Transaction submitted. If your ticket doesn't appear, click Refresh in a few seconds.",
+          description: explorerUrl ? `Transaction: ${txId.slice(0, 16)}...` : "Transaction confirmed on-chain.",
           ...(explorerUrl && {
             action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
           })
@@ -215,7 +212,7 @@ export default function TicketsPage() {
                     <div className="absolute inset-0 bg-gradient-to-t from-black/80 to-transparent" />
                     <div className="absolute bottom-4 left-4 right-4 flex items-center justify-between">
                       <Badge className="bg-primary text-black font-bold border-none" title={event.price > 0 ? "Paid to organizer when you mint" : "Free event"}>
-                        {event.price} Aleo
+                        {event.price > 0 ? `${event.price} Aleo` : "Free"}
                         {event.price > 0 && (
                           <span className="ml-1 opacity-80 text-[10px] font-normal">(pay on mint)</span>
                         )}

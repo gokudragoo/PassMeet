@@ -136,13 +136,14 @@ export async function unpinFromIPFS(cid: string): Promise<void> {
   }
 }
 
+/** Safe IPFS index update: upload new index first, then retire old. No destructive unpin-before-success. */
 export async function saveEventMetadata(event: EventMetadata): Promise<string | null> {
   if (!PINATA_JWT) {
     return null;
   }
 
   const eventCID = await uploadToIPFS(event, `passmeet_event_${event.id}`);
-  
+
   const existingIndexCID = await getEventsCID();
   let eventsIndex: EventsIndex = {
     events: [],
@@ -154,7 +155,6 @@ export async function saveEventMetadata(event: EventMetadata): Promise<string | 
     if (existingIndex) {
       eventsIndex = existingIndex;
     }
-    await unpinFromIPFS(existingIndexCID);
   }
 
   if (!eventsIndex.events.includes(eventCID)) {
@@ -162,7 +162,10 @@ export async function saveEventMetadata(event: EventMetadata): Promise<string | 
   }
   eventsIndex.lastUpdated = new Date().toISOString();
 
-  await uploadToIPFS(eventsIndex, EVENTS_INDEX_NAME);
+  const newIndexCID = await uploadToIPFS(eventsIndex, EVENTS_INDEX_NAME);
+  if (existingIndexCID && newIndexCID && existingIndexCID !== newIndexCID) {
+    await unpinFromIPFS(existingIndexCID);
+  }
 
   return eventCID;
 }

@@ -5,6 +5,8 @@ import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { PASSMEET_V1_PROGRAM_ID, PASSMEET_SUBS_PROGRAM_ID, CREDITS_PROGRAM_ID } from "@/lib/aleo";
 import { getEventCounter, getEvent } from "@/lib/aleo-rpc";
 
+export type PaymentRail = "credits" | "usdcx" | "usad";
+
 export interface Event {
   id: string;
   name: string;
@@ -13,6 +15,10 @@ export interface Event {
   capacity: number;
   ticketCount: number;
   price: number;
+  priceCredits: number;
+  priceUsdcx: number;
+  priceUsad: number;
+  supportedRails: PaymentRail[];
   date: string;
   location: string;
   image: string;
@@ -39,8 +45,8 @@ interface PassMeetContextType {
   isDataLoading: boolean;
   isAuthenticated: boolean;
   authenticateWithSignature: () => Promise<boolean>;
-  createEvent: (name: string, capacity: number, price: number, eventDate: string, eventLocation: string) => Promise<string | null>;
-  buyTicket: (event: Event) => Promise<string | null>;
+  createEvent: (name: string, capacity: number, priceCredits: number, priceUsdcx: number, priceUsad: number, eventDate: string, eventLocation: string) => Promise<string | null>;
+  buyTicket: (event: Event, rail?: PaymentRail) => Promise<string | null>;
   verifyEntry: (ticket: Ticket) => Promise<string | null>;
   refreshEvents: (opts?: { silent?: boolean }) => Promise<void>;
   refreshTickets: (opts?: { silent?: boolean }) => Promise<number>;
@@ -61,8 +67,10 @@ interface PassMeetProviderProps {
 }
 
 const DEFAULT_IMAGE = "https://images.unsplash.com/photo-1492684223066-81342ee5ff30?q=80&w=800";
-const LOG = (msg: string, data?: unknown) => {
-  console.log(`[PassMeet] ${msg}`, data ?? "");
+const LOG = (msg: string, _data?: unknown) => {
+  if (process.env.NODE_ENV === "development") {
+    console.log(`[PassMeet] ${msg}`, _data ?? "");
+  }
 };
 
 /** Parse microcredits amount from a credits.aleo record (string or object). Returns null if not found. */
@@ -184,7 +192,9 @@ function isOnChainTxHash(id: string): boolean {
   return typeof id === "string" && id.startsWith("at1") && id.length >= 61;
 }
 
-/** Poll for final ON-CHAIN transaction ID (at1...). Adaptive: 1s for first 10 attempts, then 2s (Leo can take 2+ min). */
+export type TxState = "submitted" | "confirmed" | "timed_out" | "failed" | "rejected";
+
+/** Poll for final ON-CHAIN transaction ID (at1...). Returns state + hash. Never treats null as success. */
 async function pollForTxHash(
   tempId: string,
   transactionStatus: (id: string) => Promise<{ status: string; transactionId?: string; error?: string }>,
@@ -192,20 +202,19 @@ async function pollForTxHash(
   firstPhaseAttempts = 10,
   firstPhaseDelayMs = 1000,
   secondPhaseDelayMs = 2000
-): Promise<string | null> {
+): Promise<{ state: TxState; txHash: string | null }> {
   for (let i = 0; i < maxAttempts; i++) {
     const delay = i < firstPhaseAttempts ? firstPhaseDelayMs : secondPhaseDelayMs;
     await new Promise((r) => setTimeout(r, delay));
     const res = await transactionStatus(tempId);
     if (res.transactionId && isOnChainTxHash(res.transactionId)) {
-      return res.transactionId;
+      return { state: "confirmed", txHash: res.transactionId };
     }
     const status = res.status?.toLowerCase();
-    if (status === "rejected" || status === "failed") {
-      return null;
-    }
+    if (status === "rejected") return { state: "rejected", txHash: null };
+    if (status === "failed") return { state: "failed", txHash: null };
   }
-  return null;
+  return { state: "timed_out", txHash: null };
 }
 
 export function PassMeetProvider({ children }: PassMeetProviderProps) {
@@ -225,22 +234,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
     LOG("authenticateWithSignature: starting");
     try {
-      if (signMessage) {
-        const message = `PassMeet Authentication\nTimestamp: ${Date.now()}\nAddress: ${address}`;
-        const signature = await signMessage(message);
-
-        if (signature) {
-          LOG("authenticateWithSignature: success (signed)");
-          setIsAuthenticated(true);
-          localStorage.setItem("passmeet_auth", JSON.stringify({
-            address,
-            timestamp: Date.now()
-          }));
-          return true;
-        }
-        return false;
-      } else {
-        LOG("authenticateWithSignature: success (connect-only)");
+      if (!signMessage) {
+        LOG("authenticateWithSignature: no signMessage, connect-only");
         setIsAuthenticated(true);
         localStorage.setItem("passmeet_auth", JSON.stringify({
           address,
@@ -249,16 +244,23 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         }));
         return true;
       }
-    } catch (error) {
-      LOG("authenticateWithSignature: error, using fallback", error);
-      console.error("Authentication failed:", error);
+      const message = `PassMeet Authentication\nTimestamp: ${Date.now()}\nAddress: ${address}`;
+      const signature = await signMessage(message);
+      if (!signature) {
+        LOG("authenticateWithSignature: rejected or failed");
+        return false;
+      }
+      LOG("authenticateWithSignature: success (signed)");
       setIsAuthenticated(true);
       localStorage.setItem("passmeet_auth", JSON.stringify({
         address,
-        timestamp: Date.now(),
-        method: "fallback"
+        timestamp: Date.now()
       }));
       return true;
+    } catch (error) {
+      LOG("authenticateWithSignature: error", error);
+      console.error("Authentication failed:", error);
+      return false;
     }
   }, [address, signMessage]);
 
@@ -286,17 +288,14 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const localMeta = getLocalMetadata();
 
       // 4) Merge on-chain data with metadata
-      // Only show events that have metadata (IPFS or localStorage) to avoid orphan/test data
+      // Show all on-chain events; use placeholder metadata when storage unavailable
       const merged = onChainEvents
         .map(({ id, data }): Event | null => {
           const idStr = String(id);
           const ipfs = ipfsMeta[idStr];
           const local = localMeta[idStr];
 
-          // Skip events with no metadata (avoids showing placeholder "Event #1" from orphan on-chain data)
-          if (!ipfs && !local) return null;
-
-          // Priority: IPFS > localStorage > defaults
+          // Priority: IPFS > localStorage > placeholder (never hide on-chain events)
           const name = ipfs?.name || local?.name || `Event #${id}`;
           const date = ipfs?.date || local?.date || "";
           const location = ipfs?.location || local?.location || "";
@@ -306,6 +305,14 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             ? `${data.organizer.slice(0, 10)}...${data.organizer.slice(-4)}`
             : "Unknown";
 
+          const priceCredits = (data as { price_credits?: number }).price_credits ?? data.price;
+          const priceUsdcx = (data as { price_usdcx?: number }).price_usdcx ?? 0;
+          const priceUsad = (data as { price_usad?: number }).price_usad ?? 0;
+          const rails: PaymentRail[] = [];
+          if (priceCredits > 0) rails.push("credits");
+          if (priceUsdcx > 0) rails.push("usdcx");
+          if (priceUsad > 0) rails.push("usad");
+
           return {
             id: idStr,
             name,
@@ -313,7 +320,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             organizerAddress: data.organizer,
             capacity: data.capacity,
             ticketCount: data.ticket_count,
-            price: data.price / 1_000_000,
+            price: priceCredits / 1_000_000,
+            priceCredits,
+            priceUsdcx,
+            priceUsad,
+            supportedRails: rails,
             date,
             location,
             image,
@@ -372,10 +383,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
       records = records ?? [];
       LOG("refreshTickets: records fetched", { count: records.length });
-      console.log("[PassMeet] refreshTickets: records count", records.length);
-      if (records.length > 0) {
-        LOG("refreshTickets: raw record sample", JSON.stringify(records[0]).slice(0, 500));
-      }
       const tickets: Ticket[] = [];
 
       if (records.length > 0) {
@@ -396,6 +403,13 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           const idStr = String(id);
           const ipfs = ipfsMeta[idStr];
           const local = localMeta[idStr];
+          const priceCredits = (data as { price_credits?: number }).price_credits ?? data.price;
+          const priceUsdcx = (data as { price_usdcx?: number }).price_usdcx ?? 0;
+          const priceUsad = (data as { price_usad?: number }).price_usad ?? 0;
+          const rails: PaymentRail[] = [];
+          if (priceCredits > 0) rails.push("credits");
+          if (priceUsdcx > 0) rails.push("usdcx");
+          if (priceUsad > 0) rails.push("usad");
           eventMap[idStr] = {
             id: idStr,
             name: ipfs?.name || local?.name || `Event #${id}`,
@@ -403,7 +417,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
             organizerAddress: data.organizer,
             capacity: data.capacity,
             ticketCount: data.ticket_count,
-            price: data.price / 1_000_000,
+            price: priceCredits / 1_000_000,
+            priceCredits,
+            priceUsdcx,
+            priceUsad,
+            supportedRails: rails,
             date: ipfs?.date || local?.date || "",
             location: ipfs?.location || local?.location || "",
             image: DEFAULT_IMAGE,
@@ -486,7 +504,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const merged =
           tickets.length === 0 ? optimisticOnly : [...tickets, ...fromRef, ...optimisticOnly];
         LOG("refreshTickets: done", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
-        console.log("[PassMeet] refreshTickets: merge result", { fromWallet: tickets.length, fromRef: fromRef.length, optimistic: optimisticOnly.length, total: merged.length });
         return merged;
       });
       refreshTicketsDebounceRef.current.lastCount = tickets.length;
@@ -505,27 +522,39 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const createEvent = useCallback(async (
     name: string,
     capacity: number,
-    price: number,
+    priceCredits: number,
+    priceUsdcx: number,
+    priceUsad: number,
     eventDate: string,
     eventLocation: string
   ): Promise<string | null> => {
     if (!address || !executeTransaction) return null;
 
-    LOG("createEvent: starting", { name, capacity, price, eventDate, eventLocation });
+    LOG("createEvent: starting", { name, capacity, priceCredits, priceUsdcx, priceUsad, eventDate, eventLocation });
     try {
       const prevCount = await getEventCounter();
       LOG("createEvent: prevEventCount", prevCount);
+      const creditsMicro = Math.floor(priceCredits * 1_000_000);
+      const usdcxMicro = Math.floor(priceUsdcx * 1_000_000);
+      const usadMicro = Math.floor(priceUsad * 1_000_000);
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "create_event",
-        inputs: [`${capacity}u32`, `${Math.floor(price * 1_000_000)}u64`],
+        inputs: [`${capacity}u32`, `${creditsMicro}u128`, `${usdcxMicro}u128`, `${usadMicro}u128`],
         fee: 100_000,
       });
 
       const tempId = result?.transactionId;
       LOG("createEvent: tx submitted", { tempId });
       if (tempId) {
-        const txHash = await pollForTxHash(tempId, transactionStatus);
+        const { state, txHash } = await pollForTxHash(tempId, transactionStatus);
+        if (state !== "confirmed") {
+          throw new Error(
+            state === "rejected" ? "Transaction was rejected." :
+            state === "failed" ? "Transaction failed on-chain." :
+            "Transaction confirmation timed out. Check your wallet for status."
+          );
+        }
         LOG("createEvent: tx confirmed", { tempId, txHash });
         // Try to discover the new on-chain event ID by polling
         let newOnChainId: number;
@@ -539,23 +568,31 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
         saveLocalMetadata(idStr, { name, date: eventDate, location: eventLocation });
 
-        try {
-          await fetch("/api/events", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              id: newOnChainId,
-              name,
-              date: eventDate,
-              location: eventLocation,
-              organizer: address,
-              capacity,
-              price
-            })
-          });
-        } catch {
-          // IPFS optional
+        const metaRes = await fetch("/api/events", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            id: newOnChainId,
+            name,
+            date: eventDate,
+            location: eventLocation,
+            organizer: address,
+            capacity,
+            price: creditsMicro / 1_000_000,
+            priceCredits: creditsMicro,
+            priceUsdcx,
+            priceUsad
+          })
+        });
+        if (!metaRes.ok) {
+          const errBody = await metaRes.text();
+          throw new Error(`Metadata save failed: ${errBody || metaRes.statusText}`);
         }
+
+        const rails: PaymentRail[] = [];
+        if (creditsMicro > 0) rails.push("credits");
+        if (usdcxMicro > 0) rails.push("usdcx");
+        if (usadMicro > 0) rails.push("usad");
 
         const newEvent: Event = {
           id: idStr,
@@ -564,7 +601,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           organizerAddress: address,
           capacity,
           ticketCount: 0,
-          price,
+          price: creditsMicro / 1_000_000,
+          priceCredits: creditsMicro,
+          priceUsdcx: usdcxMicro,
+          priceUsad: usadMicro,
+          supportedRails: rails,
           date: eventDate,
           location: eventLocation,
           image: DEFAULT_IMAGE,
@@ -572,9 +613,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         };
 
         setEvents((prev) => [...prev, newEvent]);
-        // Return on-chain hash (at1...) for explorer; "PENDING" when created but hash not yet available
-        LOG("createEvent: success", { eventId: idStr, onChainTxHash: txHash ?? "pending" });
-        return txHash ?? "PENDING";
+        LOG("createEvent: success", { eventId: idStr, onChainTxHash: txHash });
+        return txHash;
       }
       LOG("createEvent: no tempId from wallet");
       return null;
@@ -586,10 +626,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   }, [address, executeTransaction, transactionStatus]);
 
   // ---- Buy Ticket ----
-  const buyTicket = useCallback(async (event: Event): Promise<string | null> => {
+  const buyTicket = useCallback(async (event: Event, rail: PaymentRail = "credits"): Promise<string | null> => {
     if (!address || !executeTransaction) return null;
 
-    LOG("buyTicket: starting", { eventId: event.id, eventName: event.name, price: event.price });
+    LOG("buyTicket: starting", { eventId: event.id, eventName: event.name, rail });
     try {
       const eventIdNum = parseInt(event.id, 10);
       if (isNaN(eventIdNum)) {
@@ -606,12 +646,18 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       }
 
       const nextTicketId = onChainEvent.ticket_count + 1;
-      const priceMicro = Math.floor(event.price * 1_000_000);
+      const isFree = event.priceCredits === 0 && event.priceUsdcx === 0 && event.priceUsad === 0;
+
+      if (rail === "usdcx" || rail === "usad") {
+        throw new Error("USDCx and USAD payment rails are not yet available. Use Aleo credits.");
+      }
+
       const FEE_MINT = 100_000;
       const FEE_TRANSFER = 100_000;
 
-      // Paid event: transfer credits to organizer first, then mint
-      if (event.price > 0 && requestRecords && event.organizerAddress) {
+      // Paid event (credits): transfer credits to organizer first, then mint
+      if (!isFree && rail === "credits" && requestRecords && event.organizerAddress) {
+        const priceMicro = event.priceCredits;
         const requiredCredits = priceMicro + FEE_TRANSFER + FEE_MINT;
         let creditsRecords: unknown[] = [];
         try {
@@ -642,30 +688,35 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           }
         }
         LOG("buyTicket: executing payment to organizer", { organizer: event.organizerAddress.slice(0, 12) + "...", priceMicro });
-        const payResult = (await executeTransaction({
+        const payTxResult = (await executeTransaction({
           program: CREDITS_PROGRAM_ID,
           function: "transfer_private",
           inputs: [creditRecordInput, event.organizerAddress, `${priceMicro}u64`],
           fee: FEE_TRANSFER,
         })) ?? null;
-        const payTempId = payResult?.transactionId ?? null;
+        const payTempId = payTxResult?.transactionId ?? null;
         if (!payTempId) {
           throw new Error("Payment transaction was not submitted. Please try again.");
         }
-        const payTxHash = await pollForTxHash(payTempId, transactionStatus);
-        if (!payTxHash) {
-          throw new Error("Payment confirmation timed out. Your balance may have been deducted; check your wallet. You can retry minting.");
+        const payPollResult = await pollForTxHash(payTempId, transactionStatus);
+        if (payPollResult.state !== "confirmed") {
+          throw new Error(
+            payPollResult.state === "rejected" ? "Payment was rejected." :
+            payPollResult.state === "failed" ? "Payment failed on-chain." :
+            "Payment confirmation timed out. Your balance may have been deducted; check your wallet. You can retry minting."
+          );
         }
-        LOG("buyTicket: payment confirmed", { payTxHash });
+        LOG("buyTicket: payment confirmed", { payTxHash: payPollResult.txHash });
       }
 
-      LOG("buyTicket: minting", { eventIdNum, nextTicketId });
+      const mintFunction = isFree ? "mint_free_ticket" : "mint_ticket";
+      LOG("buyTicket: minting", { eventIdNum, nextTicketId, mintFunction });
 
       const txPayload = {
         program: PASSMEET_V1_PROGRAM_ID,
-        function: "mint_ticket",
+        function: mintFunction,
         inputs: [`${eventIdNum}u64`, `${nextTicketId}u64`],
-        fee: 100_000,
+        fee: FEE_MINT,
       };
       let result: { transactionId?: string } | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
@@ -678,7 +729,15 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tempId = result?.transactionId ?? null;
       LOG("buyTicket: tx submitted", { tempId, walletName: walletName || "unknown" });
       if (tempId) {
-        const txHash = await pollForTxHash(tempId, transactionStatus);
+        const mintResult = await pollForTxHash(tempId, transactionStatus);
+        if (mintResult.state !== "confirmed") {
+          throw new Error(
+            mintResult.state === "rejected" ? "Mint was rejected." :
+            mintResult.state === "failed" ? "Mint failed on-chain." :
+            "Mint confirmation timed out. Check your wallet for status."
+          );
+        }
+        const txHash = mintResult.txHash;
         LOG("buyTicket: tx confirmed", { tempId, txHash });
 
         const optimisticTicket: Ticket = {
@@ -689,7 +748,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           date: event.date,
           location: event.location,
           status: "Valid",
-          txHash: txHash ?? "",
+          txHash: txHash ?? "", // txHash is non-null when state is confirmed
           nullifier: "",
           recordString: undefined,
         };
@@ -699,7 +758,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         });
         pendingOptimisticTicketRef.current = address ? { address, ticket: optimisticTicket } : null;
         LOG("buyTicket: optimistic ticket added", { eventId: eventIdNum, ticketId: nextTicketId });
-        console.log("[PassMeet] buyTicket: optimistic ticket added", { eventId: eventIdNum, ticketId: nextTicketId });
 
         await refreshEvents({ silent: true });
         await new Promise((r) => setTimeout(r, 100));
@@ -710,8 +768,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           if (count > 0) break;
           if (attempt < 5) await new Promise((r) => setTimeout(r, 4000));
         }
-        LOG("buyTicket: success", { onChainTxHash: txHash ?? "pending" });
-        return txHash ?? "PENDING";
+        LOG("buyTicket: success", { onChainTxHash: txHash });
+        return txHash;
       }
       LOG("buyTicket: no txId returned");
       return null;
@@ -872,15 +930,23 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tempId = result?.transactionId;
       LOG("verifyEntry: tx submitted", { tempId });
       if (tempId) {
-        const txHash = await pollForTxHash(tempId, transactionStatus);
+        const verifyResult = await pollForTxHash(tempId, transactionStatus);
+        if (verifyResult.state !== "confirmed") {
+          throw new Error(
+            verifyResult.state === "rejected" ? "Verification was rejected." :
+            verifyResult.state === "failed" ? "Verification failed on-chain." :
+            "Verification confirmation timed out."
+          );
+        }
+        const txHash = verifyResult.txHash;
         LOG("verifyEntry: tx confirmed", { tempId, txHash });
         setMyTickets((prev) =>
           prev.map((t) =>
             t.id === ticket.id ? { ...t, status: "Used" as const } : t
           )
         );
-        LOG("verifyEntry: success", { onChainTxHash: txHash ?? "pending" });
-        return txHash ?? "PENDING";
+        LOG("verifyEntry: success", { onChainTxHash: txHash });
+        return txHash;
       }
       LOG("verifyEntry: no txId returned");
       return null;
@@ -905,7 +971,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   useEffect(() => {
     if (address && myTickets.length > 0) {
       saveTicketsToLocalStorage(address, myTickets);
-      console.log("[PassMeet] tickets persisted", { address: address.slice(0, 12) + "...", count: myTickets.length });
     }
   }, [address, myTickets]);
 
@@ -916,7 +981,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       setMyTickets(saved);
       pendingOptimisticTicketRef.current = null;
       LOG("wallet connected: refreshing data", { address: address.slice(0, 12) + "...", savedTickets: saved.length });
-      console.log("[PassMeet] loaded tickets from storage", { count: saved.length });
       const stored = localStorage.getItem("passmeet_auth");
       if (stored) {
         try {
@@ -934,7 +998,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         for (let retry = 0; retry < 2 && count === 0; retry++) {
           await new Promise((r) => setTimeout(r, 3000));
           count = await refreshTickets({ silent: true });
-          console.log("[PassMeet] refreshTickets retry", { retry: retry + 1, count });
         }
       };
       doRefresh().catch((err) => {

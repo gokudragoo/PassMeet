@@ -11,12 +11,6 @@ import { Plus, Users, Calendar, Wallet, CheckCircle2, AlertCircle, Loader2, Refr
 import { toast } from "sonner";
 import { usePassMeet } from "@/context/PassMeetContext";
 import { Badge } from "@/components/ui/badge";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-  TooltipProvider,
-} from "@/components/ui/tooltip";
 import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID } from "@/lib/aleo";
 
 export default function OrganizerPage() {
@@ -25,13 +19,14 @@ export default function OrganizerPage() {
   const [loading, setLoading] = useState(false);
   const [eventName, setEventName] = useState("");
   const [capacity, setCapacity] = useState("");
-  const [price, setPrice] = useState("");
+  const [priceCredits, setPriceCredits] = useState("");
+  const [priceUsdcx, setPriceUsdcx] = useState("");
+  const [priceUsad, setPriceUsad] = useState("");
   const [eventDate, setEventDate] = useState("");
   const [location, setLocation] = useState("");
 
   const handleCreateEvent = async (e: React.FormEvent) => {
     e.preventDefault();
-    console.log("[PassMeet Organizer] handleCreateEvent: submit", { eventName, capacity, price, eventDate, location });
     if (!address) {
       toast.error("Please connect your wallet first");
       return;
@@ -49,24 +44,26 @@ export default function OrganizerPage() {
       const txHash = await createEvent(
         eventName,
         parseInt(capacity),
-        parseFloat(price),
+        parseFloat(priceCredits || "0"),
+        parseFloat(priceUsdcx || "0"),
+        parseFloat(priceUsad || "0"),
         eventDate,
         location
       );
 
-      // txHash is null on failure; "PENDING" = created, hash not yet; string = on-chain hash
       if (txHash !== null) {
-        console.log("[PassMeet Organizer] createEvent: success", { txHash: txHash === "PENDING" ? "confirming" : txHash });
-        const explorerUrl = txHash !== "PENDING" ? getTransactionUrl(txHash) : null;
+        const explorerUrl = getTransactionUrl(txHash);
         toast.success(`Event created successfully!`, {
-          description: explorerUrl ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction submitted. Check your wallet for the on-chain tx ID.",
+          description: explorerUrl ? `Transaction: ${txHash.slice(0, 16)}...` : "Transaction confirmed on-chain.",
           ...(explorerUrl && {
             action: { label: "View on Explorer", onClick: () => window.open(explorerUrl, "_blank") }
           })
         });
         setEventName("");
         setCapacity("");
-        setPrice("");
+        setPriceCredits("");
+        setPriceUsdcx("");
+        setPriceUsad("");
         setEventDate("");
         setLocation("");
       }
@@ -165,43 +162,64 @@ export default function OrganizerPage() {
                   required
                 />
               </div>
-              <div className="grid grid-cols-2 gap-4">
-                <div className="space-y-2">
-                  <Label htmlFor="capacity" className="text-zinc-400">Capacity</Label>
-                  <Input
-                    id="capacity"
-                    type="number"
-                    placeholder="100"
-                    value={capacity}
-                    onChange={(e) => setCapacity(e.target.value)}
-                    className="bg-black/40 border-white/10 text-white focus:border-primary"
-                    required
-                  />
+              <div className="space-y-2">
+                <Label htmlFor="capacity" className="text-zinc-400">Capacity</Label>
+                <Input
+                  id="capacity"
+                  type="number"
+                  placeholder="100"
+                  value={capacity}
+                  onChange={(e) => setCapacity(e.target.value)}
+                  className="bg-black/40 border-white/10 text-white focus:border-primary"
+                  required
+                />
+              </div>
+              <div className="space-y-2">
+                <Label className="text-zinc-400">Prices per rail (0 = disabled)</Label>
+                <div className="grid grid-cols-3 gap-4">
+                  <div>
+                    <Label htmlFor="priceCredits" className="text-xs text-zinc-500">Credits (Aleo)</Label>
+                    <Input
+                      id="priceCredits"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="0.5"
+                      value={priceCredits}
+                      onChange={(e) => setPriceCredits(e.target.value)}
+                      className="bg-black/40 border-white/10 text-white focus:border-primary mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="priceUsdcx" className="text-xs text-zinc-500">USDCx (soon)</Label>
+                    <Input
+                      id="priceUsdcx"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="0"
+                      value={priceUsdcx}
+                      onChange={(e) => setPriceUsdcx(e.target.value)}
+                      className="bg-black/40 border-white/10 text-white focus:border-primary mt-1 opacity-50"
+                      disabled
+                    />
+                  </div>
+                  <div>
+                    <Label htmlFor="priceUsad" className="text-xs text-zinc-500">USAD (soon)</Label>
+                    <Input
+                      id="priceUsad"
+                      type="number"
+                      step="0.01"
+                      min={0}
+                      placeholder="0"
+                      value={priceUsad}
+                      onChange={(e) => setPriceUsad(e.target.value)}
+                      className="bg-black/40 border-white/10 text-white focus:border-primary mt-1 opacity-50"
+                      disabled
+                    />
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <TooltipProvider>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <div className="space-y-1">
-                          <Label htmlFor="price" className="text-zinc-400">Price (Aleo)</Label>
-                          <Input
-                            id="price"
-                            type="number"
-                            step="0.01"
-                            placeholder="0.5"
-                            value={price}
-                            onChange={(e) => setPrice(e.target.value)}
-                            className="bg-black/40 border-white/10 text-white focus:border-primary"
-                            required
-                          />
-                        </div>
-                      </TooltipTrigger>
-                      <TooltipContent side="top" className="max-w-xs">
-                        <p>Shown to attendees. Paid to you in Aleo credits when they mint a ticket.</p>
-                      </TooltipContent>
-                    </Tooltip>
-                  </TooltipProvider>
-                </div>
+                <p className="text-xs text-zinc-500">Free event: set all to 0. Paid: set Credits price.</p>
               </div>
               <Button
                 type="submit"
