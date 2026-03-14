@@ -10,14 +10,14 @@ This repo includes:
 
 ## Update
 
-Summary of the production-hardening work shipped in the web app:
-- Wallet auth is now real server-verified signature sessions (HttpOnly cookies), no fake localStorage auth.
-- Transactions use explicit confirmation states (submitted/confirmed/timed_out/failed/rejected) to prevent phantom success.
-- Events support per-rail pricing on-chain and atomic paid purchases for `credits.aleo`, USDCx, and USAD.
-- Subscriptions are paid/atomic and validity is derived from on-chain block height (no browser-time or localStorage truth).
-- Metadata writes are explicit: the UI surfaces IPFS/Pinata failures and keeps events discoverable from on-chain data with placeholders.
-- Organizer and attendee UI now include payment-rail selection/config, and encoding issues like `Â·` separators were removed.
-- Quality gates are clean: `npm run lint`, `npm run test:run`, `npm run build`.
+This release hardens PassMeet for Aleo Testnet end-to-end (contracts + web app):
+
+- Contracts: per-rail on-chain pricing (`price_credits`, `price_usdcx`, `price_usad`), split free mint vs paid purchase, atomic payment + mint/subscribe flows, collision-free nullifiers, and Shield-friendly ZK constraints (no mapping reads in `transition`; reads/writes moved to `finalize`).
+- Payments: first-class support for `credits.aleo` plus Aleo token payments via `token_registry.aleo` (USDCx/USAD when configured).
+- Frontend: explicit transaction lifecycle (`submitted`, `confirmed`, `timed_out`, `failed`, `rejected`) and no "phantom success"; organizer UI sets per-rail prices and attendee UI selects a payment rail.
+- Auth + sessions: server-verified wallet signatures with HttpOnly cookie sessions (no localStorage auth fallbacks).
+- Metadata durability: IPFS writes are treated as part of "created"; if IPFS is unavailable, events still show from on-chain data with placeholder metadata.
+- Quality gates: `npm run lint`, `npm run test:run`, `npm run build`.
 
 ## Name, Description, Problem Being Solved
 
@@ -128,16 +128,16 @@ This repo was hardened to remove demo-style fallbacks and improve reliability en
 ### Environment Variables
 Copy `.env.example` to `.env.local` and set values:
 
-- `PASSMEET_AUTH_SECRET` (required, min 32 chars)
+- `PASSMEET_AUTH_SECRET` (required, generate a random 32+ char string)
+- `PINATA_JWT` (optional: enables event metadata persistence on IPFS; without it events still load from on-chain data with placeholder metadata)
 - `NEXT_PUBLIC_ALEO_NETWORK` (`testnet` or `mainnet`)
-- `NEXT_PUBLIC_ALEO_RPC_URL`
-- `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID`
-- `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID`
-- `PINATA_JWT` (recommended for durable metadata; without it, metadata writes will fail and the app will show placeholders)
+- `NEXT_PUBLIC_ALEO_RPC_URL` (recommended: https://api.explorer.provable.com/v2)
+- `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID` (Your deployed events Leo program)
+- `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` (Your deployed subscriptions Leo program)
 - Token rails (optional, but if you enable token pricing in the UI they must be configured on-chain too)
-  - `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID` (usually `token_registry.aleo`)
-  - `NEXT_PUBLIC_USDCX_TOKEN_ID` (field literal, e.g. `123...field`)
-  - `NEXT_PUBLIC_USAD_TOKEN_ID` (field literal, e.g. `456...field`)
+  - `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID` (`token_registry.aleo`)
+  - `NEXT_PUBLIC_USDCX_TOKEN_ID` (field literal, e.g. `123456789field`)
+  - `NEXT_PUBLIC_USAD_TOKEN_ID` (field literal, e.g. `123456789field`)
 
 ### Install and Run
 
@@ -153,6 +153,16 @@ npm run lint
 npm run test:run
 npm run build
 ```
+
+## Deploy Contracts (WSL / Leo)
+
+The Aleo programs in this repo are `@noupgrade`. If you change contract code after a successful deploy, you must bump the program IDs and deploy again.
+
+1. (Optional) Bump program IDs (only needed if the program name is already deployed on-chain): `bash scripts/bump-program-ids.sh`
+2. Deploy (broadcasts to testnet by default): `export NETWORK=testnet; export ENDPOINT=https://api.explorer.provable.com/v1; bash scripts/deploy-leo.sh`
+3. Set `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID` and `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` in `.env.local` (and in Vercel) to match what you deployed.
+
+Never put your Aleo private key in `.env` files. `scripts/deploy-leo.sh` will prompt for it (hidden input), or you can set `PRIVATE_KEY` for the current shell session.
 
 ## One-Time Admin Configuration (Required for USDCx/USAD)
 

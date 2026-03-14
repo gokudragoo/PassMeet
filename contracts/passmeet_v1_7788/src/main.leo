@@ -142,6 +142,7 @@ program passmeet_v2_7788.aleo {
         payment_record: credits.aleo/credits
     ) -> (Ticket, credits.aleo/credits, credits.aleo/credits, Future) {
         assert(payment_record.owner == self.caller);
+        assert(price > 0u64);
         assert(payment_record.microcredits >= price);
 
         let (to_organizer, change): (credits.aleo/credits, credits.aleo/credits) =
@@ -152,10 +153,10 @@ program passmeet_v2_7788.aleo {
             event_id: event_id,
             ticket_id: ticket_id
         };
-        return (ticket, to_organizer, change, finalize_purchase_ticket_credits(event_id, ticket_id, organizer, price));
+        return (ticket, to_organizer, change, finalize_buy_credits(event_id, ticket_id, organizer, price));
     }
 
-    async function finalize_purchase_ticket_credits(
+    async function finalize_buy_credits(
         public event_id: u64,
         public ticket_id: u64,
         public organizer: address,
@@ -163,6 +164,7 @@ program passmeet_v2_7788.aleo {
     ) {
         let event: EventInfo = Mapping::get(events, event_id);
         assert(event.organizer == organizer);
+        assert(event.price_credits > 0u128);
         assert(event.price_credits == (price as u128));
         assert(ticket_id == (event.ticket_count as u64) + 1u64);
         assert(event.ticket_count < event.capacity);
@@ -186,9 +188,12 @@ program passmeet_v2_7788.aleo {
         public ticket_id: u64,
         public organizer: address,
         public expected_amount: u128,
+        public payment_token_id: field,
         payment_record: token_registry.aleo/Token
     ) -> (Ticket, token_registry.aleo/Token, token_registry.aleo/Token, Future) {
         assert(payment_record.owner == self.caller);
+        assert(payment_record.token_id == payment_token_id);
+        assert(expected_amount > 0u128);
         assert(payment_record.amount >= expected_amount);
 
         let (change, to_organizer, transfer_future): (token_registry.aleo/Token, token_registry.aleo/Token, Future) =
@@ -200,21 +205,34 @@ program passmeet_v2_7788.aleo {
             ticket_id: ticket_id
         };
 
-        return (ticket, change, to_organizer, finalize_purchase_ticket_token(event_id, ticket_id, organizer, expected_amount, transfer_future));
+        return (ticket, change, to_organizer, finalize_buy_token(event_id, ticket_id, organizer, expected_amount, payment_token_id, transfer_future));
     }
 
-    async function finalize_purchase_ticket_token(
+    async function finalize_buy_token(
         public event_id: u64,
         public ticket_id: u64,
         public organizer: address,
         public expected_amount: u128,
+        public payment_token_id: field,
         transfer_future: Future
     ) {
-        await transfer_future;
+        transfer_future.await();
+
+        let usdcx_id: field = Mapping::get_or_use(token_ids, 0u8, 0field);
+        let usad_id: field = Mapping::get_or_use(token_ids, 1u8, 0field);
+        assert(usdcx_id != 0field);
+        assert(usad_id != 0field);
 
         let event: EventInfo = Mapping::get(events, event_id);
         assert(event.organizer == organizer);
-        assert(event.price_usdcx == expected_amount || event.price_usad == expected_amount);
+        if (payment_token_id == usdcx_id) {
+            assert(event.price_usdcx > 0u128);
+            assert(event.price_usdcx == expected_amount);
+        } else {
+            assert(payment_token_id == usad_id);
+            assert(event.price_usad > 0u128);
+            assert(event.price_usad == expected_amount);
+        }
         assert(ticket_id == (event.ticket_count as u64) + 1u64);
         assert(event.ticket_count < event.capacity);
 

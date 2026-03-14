@@ -28,6 +28,15 @@ export function getPassMeetAuthSecret(): string {
   if (!secret || secret.length < 32) {
     throw new Error("Auth secret not configured (PASSMEET_AUTH_SECRET, min 32 chars).");
   }
+
+  // Prevent accidental production deployments with placeholder secrets.
+  if (
+    process.env.NODE_ENV === "production" &&
+    (secret === "please_change_me_to_a_random_32_char_secret" ||
+      secret === "your_random_32_char_secret_here")
+  ) {
+    throw new Error("Auth secret is still a placeholder. Set PASSMEET_AUTH_SECRET to a real random value.");
+  }
   return secret;
 }
 
@@ -68,4 +77,3 @@ export function verifyToken<TPayload extends SignedTokenPayload>(
 
   return { payload: payload as TPayload };
 }
-

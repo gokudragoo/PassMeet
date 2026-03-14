@@ -748,7 +748,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
         const tokenRecordInput = toWalletRecordInput(recordItem);
         functionName = "purchase_ticket";
-        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, event.organizerAddress, `${price}u128`, tokenRecordInput];
+        inputs = [`${eventIdNum}u64`, `${nextTicketId}u64`, event.organizerAddress, `${price}u128`, tokenId, tokenRecordInput];
       }
 
       LOG("buyTicket: executing", { eventIdNum, nextTicketId, functionName, rail });

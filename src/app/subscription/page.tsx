@@ -338,7 +338,7 @@ export default function SubscriptionPage() {
         }
 
         functionName = "subscribe";
-        inputs = [`${tier.id}u8`, subsConfig.treasury!, `${microPrice}u128`, toWalletRecordInput(recordItem)];
+        inputs = [`${tier.id}u8`, subsConfig.treasury!, `${microPrice}u128`, tokenId, toWalletRecordInput(recordItem)];
       }
 
       const result = await executeTransaction({

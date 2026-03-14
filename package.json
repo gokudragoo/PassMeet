@@ -13,6 +13,7 @@
     "deploy:contracts": "node scripts/deploy-leo.js"
   },
   "dependencies": {
+    "@aleohq/sdk": "^0.6.9",
     "@hookform/resolvers": "^5.2.2",
     "@provablehq/aleo-types": "^0.3.0-alpha.3",
     "@provablehq/aleo-wallet-adaptor-core": "^0.3.0-alpha.3",
