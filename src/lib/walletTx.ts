@@ -42,7 +42,7 @@ export async function pollForTxHash(
       // right after broadcasting, before the transaction is discoverable/indexed. Treat as
       // still-submitted and keep polling.
       const msg = (e as Error)?.message?.toLowerCase?.() ?? "";
-      if (msg.includes("transaction not found") || msg.includes("not found")) {
+      if (msg.includes("transaction not found") || msg.includes("no such transaction")) {
         continue;
       }
       throw e;

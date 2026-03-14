@@ -9,6 +9,7 @@ const FALLBACK_GATEWAYS = [
 ];
 
 const FETCH_TIMEOUT_MS = 2000;
+const PINATA_TIMEOUT_MS = 15_000;
 
 export interface EventMetadata {
   id: string;
@@ -30,12 +31,22 @@ export interface EventsIndex {
 
 const EVENTS_INDEX_NAME = "passmeet_events_index";
 
+async function fetchPinata(url: string, init: RequestInit, timeoutMs = PINATA_TIMEOUT_MS): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(url, { ...init, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export async function uploadToIPFS(data: object, name: string): Promise<string> {
   if (!PINATA_JWT) {
     throw new Error("Pinata JWT not configured");
   }
 
-  const response = await fetch("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
+  const response = await fetchPinata("https://api.pinata.cloud/pinning/pinJSONToIPFS", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -97,7 +108,7 @@ export async function getEventsCID(): Promise<string | null> {
   }
 
   try {
-    const response = await fetch(
+    const response = await fetchPinata(
       `https://api.pinata.cloud/data/pinList?metadata[name]=${EVENTS_INDEX_NAME}&status=pinned&pageLimit=1`,
       {
         headers: {
@@ -125,7 +136,7 @@ export async function unpinFromIPFS(cid: string): Promise<void> {
   if (!PINATA_JWT) return;
 
   try {
-    await fetch(`https://api.pinata.cloud/pinning/unpin/${cid}`, {
+    await fetchPinata(`https://api.pinata.cloud/pinning/unpin/${cid}`, {
       method: "DELETE",
       headers: {
         Authorization: `Bearer ${PINATA_JWT}`,

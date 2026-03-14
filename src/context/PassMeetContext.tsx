@@ -143,7 +143,9 @@ interface EventMetadataCache {
 /** Fetch ALL event metadata from IPFS (single request). Returns a map keyed by event ID string. */
 async function fetchAllEventMetadata(): Promise<Record<string, EventMetadataCache>> {
   try {
-    const res = await fetch("/api/events");
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 5000);
+    const res = await fetch("/api/events", { signal: controller.signal }).finally(() => clearTimeout(timeout));
     if (!res.ok) return {};
     const { events: ipfsEvents } = await res.json();
     if (!Array.isArray(ipfsEvents)) return {};
@@ -571,6 +573,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     eventLocation: string
   ): Promise<{ txHash: string; eventId: string; metadataSaved: boolean } | null> => {
     if (!address || !executeTransaction) return null;
+    const addr = address;
 
     LOG("createEvent: starting", { name, capacity, priceCredits, priceUsdcx, priceUsad, eventDate, eventLocation });
     try {
@@ -579,10 +582,34 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const creditsMicro = Math.floor(priceCredits * 1_000_000);
       const usdcxMicro = Math.floor(priceUsdcx * 1_000_000);
       const usadMicro = Math.floor(priceUsad * 1_000_000);
-      const historyBefore = await snapshotTxHistory(
-        allowTxHistory ? requestTransactionHistory : undefined,
-        PASSMEET_V1_PROGRAM_ID
-      );
+
+      async function pollForMyEventId(maxAttempts = 45): Promise<number> {
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+          if (attempt > 0) await new Promise((r) => setTimeout(r, 2000));
+          const count = await getEventCounter();
+          if (attempt === 0 || attempt % 5 === 0) {
+            LOG("createEvent: waiting for on-chain event...", { attempt: attempt + 1, maxAttempts, chainEventCounter: count });
+          }
+          if (count <= prevCount) continue;
+
+          const upper = Math.min(count, prevCount + 10); // sanity cap
+          for (let id = prevCount + 1; id <= upper; id++) {
+            const ev = await getEvent(id);
+            if (!ev) continue;
+            if ((ev.organizer || "").trim() !== addr) continue;
+            if (ev.capacity !== capacity) continue;
+            if (ev.price_credits !== creditsMicro) continue;
+            if (ev.price_usdcx !== usdcxMicro) continue;
+            if (ev.price_usad !== usadMicro) continue;
+            return id;
+          }
+          if (attempt === 0 || attempt % 5 === 0) {
+            LOG("createEvent: saw new event ids but none matched yet", { prevCount, count, address: addr.slice(0, 10) + "...", capacity });
+          }
+        }
+        throw new Error("Timed out waiting for the event to appear on-chain. Check your wallet for the transaction status and try again.");
+      }
+
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "create_event",
@@ -593,25 +620,28 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tempId = result?.transactionId;
       LOG("createEvent: tx submitted", { tempId });
       if (tempId) {
-        const { state, txHash } = await pollForTxHash(tempId, transactionStatus, {
-          program: PASSMEET_V1_PROGRAM_ID,
-          requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
-          historyBefore,
-        });
-        if (state !== "confirmed") {
-          throw new Error(
-            state === "rejected" ? "Transaction was rejected." :
-            state === "failed" ? "Transaction failed on-chain." :
-            "Transaction confirmation timed out. Check your wallet for status."
-          );
-        }
-        LOG("createEvent: tx confirmed", { tempId, txHash });
-        // Try to discover the new on-chain event ID by polling
-        let newOnChainId: number;
+        // Primary confirmation: observe on-chain state (event_counter + events mapping).
+        // This avoids Shield's occasional "transaction not found" flakiness during indexing.
+        const newOnChainId = await pollForMyEventId();
+
+        // Best-effort: resolve an on-chain tx hash for explorer links, but don't block on it.
+        // The on-chain event presence already proves confirmation.
+        let txHash = tempId;
         try {
-          newOnChainId = await pollForNewEventId(prevCount);
-        } catch {
-          newOnChainId = prevCount + 1;
+          const status = await transactionStatus(tempId);
+          if (status?.transactionId && isOnChainTxHash(status.transactionId)) {
+            txHash = status.transactionId;
+          }
+          const s = String((status as { status?: unknown } | null)?.status ?? "").toLowerCase();
+          if (s === "rejected") throw new Error("Transaction was rejected.");
+          if (s === "failed") throw new Error("Transaction failed on-chain.");
+        } catch (e) {
+          // Ignore "transaction not found" during indexing; tx hash will appear later in wallet history.
+          const msg = (e as Error)?.message?.toLowerCase?.() ?? "";
+          if (!msg.includes("transaction not found") && !msg.includes("no such transaction")) {
+            // Other errors are still useful signals.
+            LOG("createEvent: transactionStatus error", msg);
+          }
         }
 
         const idStr = String(newOnChainId);
@@ -620,22 +650,25 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
 
         let metadataSaved = false;
         try {
+          const controller = new AbortController();
+          const timeout = setTimeout(() => controller.abort(), 12_000);
           const metaRes = await fetch("/api/events", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
+            signal: controller.signal,
             body: JSON.stringify({
               id: newOnChainId,
               name,
               date: eventDate,
               location: eventLocation,
-              organizer: address,
+              organizer: addr,
               capacity,
               price: creditsMicro / 1_000_000,
               priceCredits: creditsMicro,
               priceUsdcx: usdcxMicro,
               priceUsad: usadMicro
             })
-          });
+          }).finally(() => clearTimeout(timeout));
           if (metaRes.ok) {
             const body = (await metaRes.json().catch(() => null)) as { ipfsSaved?: unknown } | null;
             metadataSaved = body?.ipfsSaved === true;
@@ -655,8 +688,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const newEvent: Event = {
           id: idStr,
           name,
-          organizer: address.slice(0, 10) + "..." + address.slice(-4),
-          organizerAddress: address,
+          organizer: addr.slice(0, 10) + "..." + addr.slice(-4),
+          organizerAddress: addr,
           capacity,
           ticketCount: 0,
           price: creditsMicro / 1_000_000,
@@ -671,7 +704,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         };
 
         setEvents((prev) => [...prev, newEvent]);
-        if (!txHash) throw new Error("Transaction confirmed but missing on-chain tx hash.");
         LOG("createEvent: success", { eventId: idStr, onChainTxHash: txHash, metadataSaved });
         return { txHash, eventId: idStr, metadataSaved };
       }
@@ -682,7 +714,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to create event:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus, requestTransactionHistory, allowTxHistory]);
+  }, [address, executeTransaction, transactionStatus]);
 
   // ---- Buy Ticket ----
   const buyTicket = useCallback(async (event: Event, rail: PaymentRail = "credits"): Promise<string | null> => {
@@ -1121,15 +1153,6 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   }, [address, executeTransaction, transactionStatus, requestRecords, requestTransactionHistory, allowTxHistory]);
 
   // ---- Helpers ----
-  async function pollForNewEventId(prevCount: number, maxAttempts = 15): Promise<number> {
-    for (let i = 0; i < maxAttempts; i++) {
-      await new Promise((r) => setTimeout(r, 2000));
-      const count = await getEventCounter();
-      if (count > prevCount) return count;
-    }
-    throw new Error("Timed out waiting for on-chain event confirmation");
-  }
-
   // ---- Persist tickets to localStorage (per-address) ----
   useEffect(() => {
     if (address && myTickets.length > 0) {

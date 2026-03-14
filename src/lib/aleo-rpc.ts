@@ -3,6 +3,44 @@ import { ALEO_NETWORK, ALEO_RPC_URL, PASSMEET_V1_PROGRAM_ID } from "./aleo";
 // Optional JSON-RPC fallback for mapping reads. Provable Explorer REST is the primary path.
 // Leave unset unless you have a compatible Aleo JSON-RPC endpoint.
 const ALEO_JSON_RPC = process.env.NEXT_PUBLIC_ALEO_JSON_RPC || "";
+const PROVABLE_V1_FALLBACK = "https://api.explorer.provable.com/v1";
+const REST_TIMEOUT_MS = 8000;
+
+function uniqueStrings(items: string[]): string[] {
+  const out: string[] = [];
+  const seen = new Set<string>();
+  for (const it of items) {
+    const v = (it || "").trim();
+    if (!v) continue;
+    if (seen.has(v)) continue;
+    seen.add(v);
+    out.push(v);
+  }
+  return out;
+}
+
+function provableBaseCandidates(base: string): string[] {
+  const trimmed = (base || "").replace(/\/+$/, "");
+  const candidates = [trimmed];
+
+  // Many examples use /v2 in env, but mapping reads are stable on /v1.
+  // Try /v1 if /v2 is configured.
+  const v1 = trimmed.replace(/\/v2$/, "/v1");
+  if (v1 !== trimmed) candidates.push(v1);
+
+  candidates.push(PROVABLE_V1_FALLBACK);
+  return uniqueStrings(candidates);
+}
+
+async function fetchWithTimeout(url: string): Promise<Response> {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), REST_TIMEOUT_MS);
+  try {
+    return await fetch(url, { cache: "no-store", headers: { Accept: "application/json" }, signal: controller.signal });
+  } finally {
+    clearTimeout(timeout);
+  }
+}
 
 export interface OnChainEventInfo {
   id: number;
@@ -61,26 +99,34 @@ async function fetchMappingValue(
   mappingName: string,
   key: string
 ): Promise<string | null> {
-  try {
-    const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/program/${programId}/mapping/${mappingName}/${encodeURIComponent(key)}`;
-    const response = await fetch(url, {
-      cache: "no-store",
-      headers: { Accept: "application/json" },
-    });
+  const bases = provableBaseCandidates(ALEO_RPC_URL);
+  for (const base of bases) {
+    try {
+      const url = `${base}/${ALEO_NETWORK}/program/${programId}/mapping/${mappingName}/${encodeURIComponent(key)}`;
+      const response = await fetchWithTimeout(url);
 
-    if (response.ok) {
-      const text = await response.text();
-      if (text && text.trim() !== "null") {
-        let cleaned = text.trim();
-        if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
-          cleaned = cleaned.slice(1, -1);
+      if (response.ok) {
+        const text = await response.text();
+        if (text && text.trim() !== "null") {
+          let cleaned = text.trim();
+          if (cleaned.startsWith('"') && cleaned.endsWith('"')) {
+            cleaned = cleaned.slice(1, -1);
+          }
+          cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+          if (cleaned) return cleaned;
         }
-        cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
-        if (cleaned) return cleaned;
+        return null;
+      }
+
+      // Only log in dev; mapping reads are frequent and this can be noisy.
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[PassMeet RPC] mapping fetch failed (${response.status})`, { url });
+      }
+    } catch (error) {
+      if (process.env.NODE_ENV === "development") {
+        console.warn(`[PassMeet RPC] mapping fetch error`, { base, programId, mappingName, key, error });
       }
     }
-  } catch (error) {
-    console.error(`Provable fetch failed for ${mappingName}/${key}:`, error);
   }
 
   return fetchMappingValueJsonRpc(programId, mappingName, key);
@@ -106,7 +152,7 @@ export async function getEventCounter(): Promise<number> {
 export async function getLatestBlockHeight(): Promise<number | null> {
   try {
     const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/block/height/latest`;
-    const res = await fetch(url, { cache: "no-store", headers: { Accept: "application/json" } });
+    const res = await fetchWithTimeout(url);
     if (!res.ok) return null;
 
     const text = await res.text();

@@ -46,6 +46,7 @@ export default function OrganizerPage() {
     loading: true,
   });
   const [configuringTokens, setConfiguringTokens] = useState(false);
+  const [tokenConfigureNote, setTokenConfigureNote] = useState<string | null>(null);
 
   const tokenRailsConfigured = !!tokenConfig.usdcx && tokenConfig.usdcx !== "0field" && !!tokenConfig.usad && tokenConfig.usad !== "0field";
   const envUsdcx = normalizeFieldLiteral(USDCX_TOKEN_ID);
@@ -89,8 +90,12 @@ export default function OrganizerPage() {
     }
 
     setConfiguringTokens(true);
+    setTokenConfigureNote("Approve the transaction in your wallet. We'll mark this as configured once the on-chain mapping updates.");
     try {
-      toast.info("Configuring USDCx/USAD rails on-chain...");
+      console.log("[PassMeet Organizer] configure_tokens: starting", { walletName, envUsdcx, envUsad, program: PASSMEET_V1_PROGRAM_ID });
+      toast.info("Configuring USDCx/USAD rails on-chain...", {
+        description: "Approve the transaction in your wallet. This can take up to ~2 minutes on testnet.",
+      });
       const historyBefore = await snapshotTxHistory(
         allowTxHistory ? requestTransactionHistory : undefined,
         PASSMEET_V1_PROGRAM_ID
@@ -102,22 +107,49 @@ export default function OrganizerPage() {
         fee: 100_000,
       });
       const tempId = result?.transactionId;
+      console.log("[PassMeet Organizer] configure_tokens: submitted", { tempId });
       if (!tempId) throw new Error("Transaction was not submitted.");
-      const confirm = await pollForTxHash(tempId, transactionStatus, {
-        program: PASSMEET_V1_PROGRAM_ID,
-        requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
-        historyBefore,
-      });
-      if (confirm.state !== "confirmed" || !confirm.txHash) {
-        throw new Error(
-          confirm.state === "rejected" ? "Configuration was rejected." :
-          confirm.state === "failed" ? "Configuration failed on-chain." :
-          "Configuration confirmation timed out."
-        );
+
+      // Shield can report "transaction not found" for a while after broadcast. Rather than rely on tx status,
+      // confirm success by observing the on-chain mapping update (token_ids).
+      const deadline = Date.now() + 120_000;
+      let lastUsdcx: string | null = null;
+      let lastUsad: string | null = null;
+      let attempts = 0;
+      while (Date.now() < deadline) {
+        attempts += 1;
+        const [usdcx, usad] = await Promise.all([getConfiguredTokenId(0), getConfiguredTokenId(1)]);
+        lastUsdcx = usdcx ?? null;
+        lastUsad = usad ?? null;
+        if (attempts === 1 || attempts % 5 === 0) {
+          console.log("[PassMeet Organizer] token_ids poll", { attempts, lastUsdcx, lastUsad });
+        }
+        if (lastUsdcx === envUsdcx && lastUsad === envUsad) break;
+        await new Promise((r) => setTimeout(r, 2500));
       }
-      toast.success("Token rails configured!", { description: `Tx: ${confirm.txHash.slice(0, 16)}...` });
-      const [usdcx, usad] = await Promise.all([getConfiguredTokenId(0), getConfiguredTokenId(1)]);
-      setTokenConfig({ usdcx: usdcx ?? null, usad: usad ?? null, loading: false });
+
+      if (lastUsdcx !== envUsdcx || lastUsad !== envUsad) {
+        // Last-chance: check wallet status quickly for a definite failure.
+        const confirm = await pollForTxHash(tempId, transactionStatus, {
+          maxAttempts: 25,
+          program: PASSMEET_V1_PROGRAM_ID,
+          requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
+          historyBefore,
+        });
+        if (confirm.state === "rejected") throw new Error("Configuration was rejected in your wallet.");
+        if (confirm.state === "failed") throw new Error("Configuration failed on-chain.");
+
+        setTokenConfigureNote(
+          "Transaction submitted, but the on-chain config is not visible yet. Wait 1-2 minutes, then click Refresh or Configure again. (Shield can be slow to index.)"
+        );
+        throw new Error("Configuration is still confirming. Please wait a minute and try again.");
+      }
+
+      toast.success("Token rails configured!", {
+        description: "USDCx/USAD token IDs are now set on-chain.",
+      });
+      setTokenConfig({ usdcx: lastUsdcx, usad: lastUsad, loading: false });
+      setTokenConfigureNote(null);
     } catch (e) {
       const msg = e instanceof Error ? e.message : "Failed to configure token rails";
       toast.error(msg);
@@ -285,6 +317,11 @@ export default function OrganizerPage() {
                 {(!envUsdcx || !envUsad) && (
                   <p className="mt-3 text-xs text-yellow-400/90">
                     Missing env token IDs. Set `NEXT_PUBLIC_USDCX_TOKEN_ID` and `NEXT_PUBLIC_USAD_TOKEN_ID` to enable token payments.
+                  </p>
+                )}
+                {tokenConfigureNote && (
+                  <p className="mt-3 text-xs text-zinc-400">
+                    {tokenConfigureNote}
                   </p>
                 )}
               </div>
