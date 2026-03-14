@@ -6,23 +6,31 @@ import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Loader2, CheckCircle2, XCircle } from "lucide-react";
 import { toast } from "sonner";
+import {
+  PASSMEET_V1_PROGRAM_ID,
+  PASSMEET_SUBS_PROGRAM_ID,
+  TOKEN_REGISTRY_PROGRAM_ID,
+  USDCX_TOKEN_ID as ENV_USDCX_TOKEN_ID,
+  USAD_TOKEN_ID as ENV_USAD_TOKEN_ID,
+  normalizeFieldLiteral,
+} from "@/lib/aleo";
 
 // ----- Token Config -----
-const USDCX_TOKEN_ID = "7788001field";
-const USAD_TOKEN_ID = "7788002field";
+const USDCX_TOKEN_ID = normalizeFieldLiteral(ENV_USDCX_TOKEN_ID) || "7788001field";
+const USAD_TOKEN_ID = normalizeFieldLiteral(ENV_USAD_TOKEN_ID) || "7788002field";
 
 const USDCX_NAME = "366469202808u128";   // "USDCx" as u128
 const USDCX_SYMBOL = "366469202808u128";
-const USAD_NAME = "1431193924u128";       // "USAD" as u128
-const USAD_SYMBOL = "1431193924u128";
+const USAD_NAME = "1431519556u128";       // "USAD" as u128
+const USAD_SYMBOL = "1431519556u128";
 
 const DECIMALS = "6u8";
 const MAX_SUPPLY = "10000000000000000u128";
 const MINT_AMOUNT = "1000000000u128"; // 1000 tokens (6 decimals)
 
-const TOKEN_REGISTRY = "token_registry.aleo";
-const EVENT_PROGRAM = "passmeet_v2_7788.aleo";
-const SUBS_PROGRAM = "passmeet_subs_v2_7788.aleo";
+const TOKEN_REGISTRY = TOKEN_REGISTRY_PROGRAM_ID || "token_registry.aleo";
+const EVENT_PROGRAM = PASSMEET_V1_PROGRAM_ID;
+const SUBS_PROGRAM = PASSMEET_SUBS_PROGRAM_ID;
 
 const FEE = 2_000_000; // 2.0 Aleo in microcredits (higher to prevent network drops)
 

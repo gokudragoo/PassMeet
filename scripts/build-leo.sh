@@ -10,7 +10,7 @@ if [[ "${LEO_VERBOSE:-0}" != "1" ]]; then
   LEO_ARGS+=(-q)
 fi
 
-for dir in contracts/passmeet_v1_7788 contracts/passmeet_subs_7788; do
+for dir in contracts/passmeet_events_7788 contracts/passmeet_subs_7788; do
   echo "Building $dir..."
   (cd "$dir" && leo "${LEO_ARGS[@]}" build) || { echo "Failed to build $dir. Is Leo CLI installed? Run: leo --version"; exit 1; }
 done

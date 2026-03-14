@@ -10,7 +10,7 @@ const { execSync } = require("child_process");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const dirs = ["contracts/passmeet_v1_7788", "contracts/passmeet_subs_7788"];
+const dirs = ["contracts/passmeet_events_7788", "contracts/passmeet_subs_7788"];
 
 const network = process.env.NETWORK || process.env.ALEO_NETWORK || "testnet";
 const privateKey = process.env.PRIVATE_KEY || process.env.ALEO_PRIVATE_KEY || "";

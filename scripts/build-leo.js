@@ -7,7 +7,7 @@ const { execSync } = require("child_process");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
-const dirs = ["contracts/passmeet_v1_7788", "contracts/passmeet_subs_7788"];
+const dirs = ["contracts/passmeet_events_7788", "contracts/passmeet_subs_7788"];
 
 // Leo prints `.env` values when not quiet; default to quiet to avoid leaking secrets.
 const leoQuiet = process.env.LEO_VERBOSE === "1" ? "" : "-q ";

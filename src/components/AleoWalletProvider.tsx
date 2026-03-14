@@ -54,7 +54,7 @@ export function AleoWalletProvider({ children }: { children: ReactNode }) {
       wallets={wallets}
       network={ALEO_NETWORK === "mainnet" ? Network.MAINNET : Network.TESTNET}
       autoConnect={true}
-      decryptPermission={DecryptPermission.OnChainHistory}
+      decryptPermission={DecryptPermission.AutoDecrypt}
       programs={programs}
       onError={(error) => console.error("[PassMeet] Wallet error:", error.message, error)}
     >

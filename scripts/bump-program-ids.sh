@@ -21,7 +21,7 @@ cd "$ROOT"
 NETWORK="${NETWORK:-${ALEO_NETWORK:-testnet}}"
 ENDPOINT="${ENDPOINT:-${ALEO_ENDPOINT:-https://api.explorer.provable.com/v1}}"
 
-EVENTS_DIR="contracts/passmeet_v1_7788"
+EVENTS_DIR="contracts/passmeet_events_7788"
 SUBS_DIR="contracts/passmeet_subs_7788"
 
 if [[ ! -f "${EVENTS_DIR}/program.json" ]] || [[ ! -f "${SUBS_DIR}/program.json" ]]; then

@@ -350,8 +350,10 @@ async function main() {
     try {
       const inputs = [
         USDCX_TOKEN_ID,   // token_id
-        walletAddress,     // receiver  
+        walletAddress,     // receiver (address.private)
         MINT_AMOUNT,       // amount
+        "false",           // external_authorization_required
+        "0u32",            // authorized_until (must be 0 when external auth is required)
       ];
       console.log("   Inputs:", inputs);
 
@@ -360,7 +362,7 @@ async function main() {
       console.log(`   📤 Submitted! TxID: ${txId}`);
       await waitForConfirmation(txId);
     } catch (e) {
-      console.error(`   ❌ Failed to mint USDCx:`, e.message);
+      console.error(`   ❌ Failed to mint USDCx:`, e?.message ?? e);
       console.error("   This might happen if the token isn't registered yet (tx still confirming).");
       console.error("   Wait a few minutes and re-run the script.");
     }
@@ -378,8 +380,10 @@ async function main() {
     try {
       const inputs = [
         USAD_TOKEN_ID,    // token_id
-        walletAddress,    // receiver
+        walletAddress,    // receiver (address.private)
         MINT_AMOUNT,      // amount
+        "false",          // external_authorization_required
+        "0u32",           // authorized_until (must be 0 when external auth is required)
       ];
       console.log("   Inputs:", inputs);
 
@@ -388,7 +392,7 @@ async function main() {
       console.log(`   📤 Submitted! TxID: ${txId}`);
       await waitForConfirmation(txId);
     } catch (e) {
-      console.error(`   ❌ Failed to mint USAD:`, e.message);
+      console.error(`   ❌ Failed to mint USAD:`, e?.message ?? e);
       console.error("   This might happen if the token isn't registered yet (tx still confirming).");
       console.error("   Wait a few minutes and re-run the script.");
     }

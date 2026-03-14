@@ -8,6 +8,7 @@ import {
   verifyToken,
   type SignedTokenPayload,
 } from "@/lib/auth";
+import { getClientIp, rateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -31,6 +32,14 @@ async function getSdk() {
 }
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const rl = rateLimit(`auth:verify:${ip}`, 20, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many verification attempts. Please wait and try again." },
+      { status: 429, headers: rateLimitHeaders(20, rl.remaining, rl.resetAt) }
+    );
+  }
   const cookieStore = await cookies();
   try {
     const { address, signatureBase64 } = (await request.json()) as {

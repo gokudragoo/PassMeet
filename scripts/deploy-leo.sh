@@ -57,7 +57,7 @@ if [[ -n "${ENDPOINT}" ]] && leo deploy --help 2>&1 | grep -q -- "--endpoint"; t
 fi
 
 CONTRACT_DIRS=(
-  "contracts/passmeet_v1_7788"
+  "contracts/passmeet_events_7788"
   "contracts/passmeet_subs_7788"
 )
 

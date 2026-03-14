@@ -21,6 +21,14 @@ program passmeet_v2_7788.aleo {
         ticket_id: u64
     }
 
+    // Used to generate an unpredictable, collision-free nullifier for gate verification.
+    // Includes the private ticket owner so third parties cannot precompute used/nullifier status.
+    struct TicketNullifierKey {
+        ticket_owner: address,
+        event_id: u64,
+        ticket_id: u64
+    }
+
     mapping event_counter: u8 => u64;
     mapping events: u64 => EventInfo;
     mapping used_tickets: field => bool;
@@ -101,11 +109,11 @@ program passmeet_v2_7788.aleo {
         public ticket_id: u64
     ) -> (Ticket, Future) {
         let ticket: Ticket = Ticket {
-            owner: self.caller,
+            owner: self.signer,
             event_id: event_id,
             ticket_id: ticket_id
         };
-        return (ticket, finalize_mint_free_ticket(self.caller, event_id, ticket_id));
+        return (ticket, finalize_mint_free_ticket(self.signer, event_id, ticket_id));
     }
 
     async function finalize_mint_free_ticket(
@@ -141,7 +149,7 @@ program passmeet_v2_7788.aleo {
         public price: u64,
         payment_record: credits.aleo/credits
     ) -> (Ticket, credits.aleo/credits, credits.aleo/credits, Future) {
-        assert(payment_record.owner == self.caller);
+        assert(payment_record.owner == self.signer);
         assert(price > 0u64);
         assert(payment_record.microcredits >= price);
 
@@ -149,7 +157,7 @@ program passmeet_v2_7788.aleo {
             credits.aleo/transfer_private(payment_record, organizer, price);
 
         let ticket: Ticket = Ticket {
-            owner: self.caller,
+            owner: self.signer,
             event_id: event_id,
             ticket_id: ticket_id
         };
@@ -191,7 +199,7 @@ program passmeet_v2_7788.aleo {
         public payment_token_id: field,
         payment_record: token_registry.aleo/Token
     ) -> (Ticket, token_registry.aleo/Token, token_registry.aleo/Token, Future) {
-        assert(payment_record.owner == self.caller);
+        assert(payment_record.owner == self.signer);
         assert(payment_record.token_id == payment_token_id);
         assert(expected_amount > 0u128);
         assert(payment_record.amount >= expected_amount);
@@ -200,7 +208,7 @@ program passmeet_v2_7788.aleo {
             token_registry.aleo/transfer_private(organizer, expected_amount, payment_record);
 
         let ticket: Ticket = Ticket {
-            owner: self.caller,
+            owner: self.signer,
             event_id: event_id,
             ticket_id: ticket_id
         };
@@ -252,8 +260,12 @@ program passmeet_v2_7788.aleo {
     async transition verify_entry(
         ticket: Ticket
     ) -> Future {
-        let combined: u128 = (ticket.event_id as u128) + (ticket.ticket_id as u128) * 18446744073709551616u128;
-        let nullifier: field = BHP256::hash_to_field(combined as field);
+        let key: TicketNullifierKey = TicketNullifierKey {
+            ticket_owner: ticket.owner,
+            event_id: ticket.event_id,
+            ticket_id: ticket.ticket_id
+        };
+        let nullifier: field = BHP256::hash_to_field(key);
         return finalize_verify_entry(nullifier);
     }
 

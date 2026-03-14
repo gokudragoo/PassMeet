@@ -10,15 +10,32 @@ const NETWORK = "testnet";
 const USDCX_TOKEN_ID = "7788001field";
 const USAD_TOKEN_ID = "7788002field";
 
+function cleanMappingText(raw) {
+  let cleaned = (raw ?? "").trim();
+  if (!cleaned || cleaned === "null") return "";
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
+  cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+  return cleaned.trim();
+}
+
+function parseField(text, key) {
+  const m = (text ?? "").match(new RegExp(`${key}:\\s*([^,\\n}]+)`));
+  return m ? m[1].trim() : null;
+}
+
 async function checkToken(tokenId, label) {
   try {
     const url = `${API_URL}/${NETWORK}/program/token_registry.aleo/mapping/registered_tokens/${tokenId}`;
     const res = await fetch(url);
     if (res.ok) {
-      const text = await res.text();
-      if (text && text.trim() !== "null") {
-        console.log(`✅ ${label} (${tokenId}): REGISTERED`);
-        console.log(`   Data: ${text.trim().slice(0, 200)}`);
+      const raw = await res.text();
+      const text = cleanMappingText(raw);
+      if (text) {
+        const supply = parseField(text, "supply") ?? "<unknown>";
+        const decimals = parseField(text, "decimals") ?? "<unknown>";
+        const admin = parseField(text, "admin") ?? "<unknown>";
+        console.log(`✅ ${label} (${tokenId}): REGISTERED (supply=${supply}, decimals=${decimals})`);
+        console.log(`   admin: ${admin}`);
         return true;
       }
     }

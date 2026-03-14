@@ -6,6 +6,7 @@ import {
   signToken,
   type SignedTokenPayload,
 } from "@/lib/auth";
+import { getClientIp, rateLimit, rateLimitHeaders } from "@/lib/rateLimit";
 
 export const runtime = "nodejs";
 
@@ -18,6 +19,14 @@ type NoncePayload = SignedTokenPayload & {
 };
 
 export async function POST(request: Request) {
+  const ip = getClientIp(request);
+  const rl = rateLimit(`auth:nonce:${ip}`, 10, 60_000);
+  if (!rl.ok) {
+    return NextResponse.json(
+      { error: "Too many nonce requests. Please wait and try again." },
+      { status: 429, headers: rateLimitHeaders(10, rl.remaining, rl.resetAt) }
+    );
+  }
   try {
     const { address } = (await request.json()) as { address?: unknown };
     if (!address || typeof address !== "string") {

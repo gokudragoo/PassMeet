@@ -16,6 +16,11 @@ struct EventInfo:
     price_usdcx as u128;
     price_usad as u128;
 
+struct TicketNullifierKey:
+    ticket_owner as address;
+    event_id as u64;
+    ticket_id as u64;
+
 mapping event_counter:
     key as u8.public;
     value as u64.public;
@@ -100,8 +105,8 @@ finalize create_event:
 function mint_free_ticket:
     input r0 as u64.public;
     input r1 as u64.public;
-    cast self.caller r0 r1 into r2 as Ticket.record;
-    async mint_free_ticket self.caller r0 r1 into r3;
+    cast self.signer r0 r1 into r2 as Ticket.record;
+    async mint_free_ticket self.signer r0 r1 into r3;
     output r2 as Ticket.record;
     output r3 as passmeet_v2_7788.aleo/mint_free_ticket.future;
 
@@ -132,14 +137,14 @@ function purchase_ticket_with_credits:
     input r2 as address.public;
     input r3 as u64.public;
     input r4 as credits.aleo/credits.record;
-    is.eq r4.owner self.caller into r5;
+    is.eq r4.owner self.signer into r5;
     assert.eq r5 true;
     gt r3 0u64 into r6;
     assert.eq r6 true;
     gte r4.microcredits r3 into r7;
     assert.eq r7 true;
     call credits.aleo/transfer_private r4 r2 r3 into r8 r9;
-    cast self.caller r0 r1 into r10 as Ticket.record;
+    cast self.signer r0 r1 into r10 as Ticket.record;
     async purchase_ticket_with_credits r0 r1 r2 r3 into r11;
     output r10 as Ticket.record;
     output r8 as credits.aleo/credits.record;
@@ -176,7 +181,7 @@ function purchase_ticket:
     input r3 as u128.public;
     input r4 as field.public;
     input r5 as token_registry.aleo/Token.record;
-    is.eq r5.owner self.caller into r6;
+    is.eq r5.owner self.signer into r6;
     assert.eq r6 true;
     is.eq r5.token_id r4 into r7;
     assert.eq r7 true;
@@ -185,7 +190,7 @@ function purchase_ticket:
     gte r5.amount r3 into r9;
     assert.eq r9 true;
     call token_registry.aleo/transfer_private r2 r3 r5 into r10 r11 r12;
-    cast self.caller r0 r1 into r13 as Ticket.record;
+    cast self.signer r0 r1 into r13 as Ticket.record;
     async purchase_ticket r0 r1 r2 r3 r4 r12 into r14;
     output r13 as Ticket.record;
     output r10 as token_registry.aleo/Token.record;
@@ -236,14 +241,10 @@ finalize purchase_ticket:
 
 function verify_entry:
     input r0 as Ticket.record;
-    cast r0.event_id into r1 as u128;
-    cast r0.ticket_id into r2 as u128;
-    mul r2 18446744073709551616u128 into r3;
-    add r1 r3 into r4;
-    cast r4 into r5 as field;
-    hash.bhp256 r5 into r6 as field;
-    async verify_entry r6 into r7;
-    output r7 as passmeet_v2_7788.aleo/verify_entry.future;
+    cast r0.owner r0.event_id r0.ticket_id into r1 as TicketNullifierKey;
+    hash.bhp256 r1 into r2 as field;
+    async verify_entry r2 into r3;
+    output r3 as passmeet_v2_7788.aleo/verify_entry.future;
 
 finalize verify_entry:
     input r0 as field.public;
