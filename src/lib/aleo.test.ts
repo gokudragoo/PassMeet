@@ -43,7 +43,7 @@ describe("aleo", () => {
     it("returns URL containing program id", () => {
       const url = getProgramUrl(PASSMEET_V1_PROGRAM_ID);
       expect(url).toContain("/program/");
-      expect(url).toContain("passmeet_v1");
+      expect(url).toContain(PASSMEET_V1_PROGRAM_ID);
     });
   });
 });

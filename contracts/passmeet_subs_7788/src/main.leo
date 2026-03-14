@@ -4,7 +4,7 @@
 import credits.aleo;
 import token_registry.aleo;
 
-program passmeet_subs_7788.aleo {
+program passmeet_subs_v2_7788.aleo {
     struct Subscription {
         subscriber: address,
         tier: u8,

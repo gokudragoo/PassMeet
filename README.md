@@ -49,8 +49,8 @@ Traditional ticketing systems leak attendee identity and purchase history, rely 
   - Auth: server-verified wallet signature sessions via HttpOnly cookies
   - Events metadata: IPFS persistence and index management (Pinata when configured)
 - Aleo programs
-  - `passmeet_v1_7788.aleo`: events, tickets, payment-atomic purchase, verify-entry nullifiers
-  - `passmeet_subs_7788.aleo`: subscriptions, payment-atomic subscribe, validity by block height
+  - `passmeet_v2_7788.aleo`: events, tickets, payment-atomic purchase, verify-entry nullifiers
+  - `passmeet_subs_v2_7788.aleo`: subscriptions, payment-atomic subscribe, validity by block height
 - Payments
   - `credits.aleo` for private credits transfers
   - `token_registry.aleo` for USDCx/USAD tokens using a single payment primitive
@@ -68,8 +68,8 @@ flowchart LR
   UI --> API["Next.js API Routes"]
   API --> IPFS["Pinata / IPFS (metadata)"]
   W --> RPC["Aleo RPC (Provable)"]
-  RPC --> A1["passmeet_v1_7788.aleo"]
-  RPC --> A2["passmeet_subs_7788.aleo"]
+  RPC --> A1["passmeet_v2_7788.aleo"]
+  RPC --> A2["passmeet_subs_v2_7788.aleo"]
   A1 --> TR["token_registry.aleo"]
   A2 --> TR
 ```
@@ -77,7 +77,7 @@ flowchart LR
 ### Data Flow (Core Paths)
 
 - Create event
-  - UI -> wallet executes `create_event(capacity, price_credits, price_usdcx, price_usad)` on `passmeet_v1_7788.aleo`
+  - UI -> wallet executes `create_event(capacity, price_credits, price_usdcx, price_usad)` on `passmeet_v2_7788.aleo`
   - UI -> `POST /api/events` writes metadata to IPFS (Pinata) and updates the index
   - The UI only claims "created" once on-chain succeeds; metadata failures are surfaced and the event remains discoverable from on-chain data with placeholder metadata
 - Buy ticket / mint ticket (atomic)
@@ -88,7 +88,7 @@ flowchart LR
 - Gate verify
   - Wallet executes `verify_entry(ticket)` which sets a one-time nullifier on-chain
 - Subscribe
-  - `subscribe_with_credits(tier, credits_record)` or `subscribe(tier, token_record)` on `passmeet_subs_7788.aleo`
+  - `subscribe_with_credits(tier, credits_record)` or `subscribe(tier, token_record)` on `passmeet_subs_v2_7788.aleo`
   - Contract stores `start_height` / `end_height` using `block.height` (no browser-time truth)
 
 ## Privacy Model (What Is Private, What Is Public)
