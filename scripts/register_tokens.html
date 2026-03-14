@@ -76,14 +76,14 @@
     <!-- Step 5: Configure contracts -->
     <div class="card">
       <h2><span class="step-number">5</span> Configure Event Contract</h2>
-      <p>Calls <code>passmeet_v2_7788.aleo/configure_tokens</code> to set token IDs on-chain</p>
+      <p>Calls <code>passmeet_v4_7788.aleo/configure_tokens</code> to set token IDs on-chain</p>
       <button id="configEvent" class="btn-primary" onclick="configureEventContract()" disabled>Configure Event Contract</button>
       <div id="statusConfigEvent" class="status info" style="display:none;"></div>
     </div>
 
     <div class="card">
       <h2><span class="step-number">6</span> Configure Subscription Contract</h2>
-      <p>Calls <code>passmeet_subs_v2_7788.aleo/configure</code> with treasury + token IDs</p>
+      <p>Calls <code>passmeet_subs_v4_7788.aleo/configure</code> with treasury + token IDs</p>
       <button id="configSubs" class="btn-primary" onclick="configureSubsContract()" disabled>Configure Subscription Contract</button>
       <div id="statusConfigSubs" class="status info" style="display:none;"></div>
     </div>
@@ -111,8 +111,8 @@ NEXT_PUBLIC_USAD_TOKEN_ID=7788002field
       },
       usad: {
         id: "7788002field",
-        name: "1431193924u128",      // "USAD" as u128
-        symbol: "1431193924u128",
+        name: "1431519556u128",      // "USAD" as u128
+        symbol: "1431519556u128",
         label: "USAD",
       },
     };
@@ -122,8 +122,8 @@ NEXT_PUBLIC_USAD_TOKEN_ID=7788002field
     const FEE = 100_000; // 0.1 Aleo in microcredits
 
     const TOKEN_REGISTRY = "token_registry.aleo";
-    const EVENT_PROGRAM = "passmeet_v2_7788.aleo";
-    const SUBS_PROGRAM = "passmeet_subs_v2_7788.aleo";
+    const EVENT_PROGRAM = "passmeet_v4_7788.aleo";
+    const SUBS_PROGRAM = "passmeet_subs_v4_7788.aleo";
 
     let walletAddress = null;
     let walletAdapter = null;
@@ -250,6 +250,8 @@ NEXT_PUBLIC_USAD_TOKEN_ID=7788002field
         token.id,          // token_id: field
         walletAddress,     // receiver: address
         MINT_AMOUNT,       // amount: u128
+        "false",           // external_authorization_required: bool
+        "0u32",            // nonce: u32
       ];
       
       showStatus(statusId, `Minting 1000 ${token.label} to your wallet...`, "info");

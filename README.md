@@ -8,7 +8,7 @@ This repo includes:
 - IPFS metadata persistence (Pinata, optional but recommended)
 - First-class payment rails: `credits.aleo`, USDCx, and USAD (via `token_registry.aleo`)
 
-## Update
+## update
 
 This release hardens PassMeet for Aleo Testnet end-to-end (contracts + web app):
 
@@ -105,7 +105,7 @@ flowchart LR
 - Optional event metadata stored on IPFS (name/date/location/image). Avoid putting sensitive attendee data in metadata.
 
 ### Anti-replay
-- The event program computes a collision-free nullifier based on `(event_id, ticket_id)` and stores it in a mapping so a ticket cannot be verified twice.
+- The event program computes a collision-free nullifier based on `(ticket_owner, event_id, ticket_id)` and stores it in a mapping so a ticket cannot be verified twice.
 
 ## Production Hardening (Implemented)
 
@@ -161,7 +161,7 @@ The Aleo programs in this repo are `@noupgrade`. If you change contract code aft
 
 1. (Optional) Bump program IDs (only needed if the program name is already deployed on-chain): `bash scripts/bump-program-ids.sh`
 2. Deploy (broadcasts to testnet by default): `export NETWORK=testnet; export ENDPOINT=https://api.explorer.provable.com/v1; bash scripts/deploy-leo.sh`
-3. Set `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID` and `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` in `.env.local` (and in Vercel) to match what you deployed.
+3. Set `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID` and `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` in your deployment env (for example Vercel) to match what you deployed. If you have a local `.env.local`, `bump-program-ids.sh` will keep these two vars in sync for you.
 
 Never put your Aleo private key in `.env` files. `scripts/deploy-leo.sh` will prompt for it (hidden input), or you can set `PRIVATE_KEY` for the current shell session.
 

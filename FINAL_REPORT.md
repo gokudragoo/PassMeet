@@ -2,7 +2,7 @@
 
 This report summarizes what was implemented to harden PassMeet for an Aleo Testnet release, what was verified, and what remains as future work.
 
-## What’s Shipped
+## What's Shipped
 
 ### Payments (Hackathon Compliance)
 
@@ -12,9 +12,9 @@ This report summarizes what was implemented to harden PassMeet for an Aleo Testn
 
 ### Minting + Gate Reliability
 
-- Client-side minting now retries the `ticket_id` concurrency edge case by re-reading on-chain `ticket_count` before each attempt.
+- Client-side minting retries the `ticket_id` concurrency edge case by re-reading on-chain `ticket_count` before each attempt.
 - Gate verification (`verify_entry`) uses wallet-native records and no longer injects non-standard `version` fields into fallback record formatting.
-- Transaction state handling is explicit and confirmation is required before showing success (no “phantom success”).
+- Transaction state handling is explicit and confirmation is required before showing success (no phantom success).
 
 ### Privacy Model Fix (Nullifiers)
 
@@ -33,8 +33,8 @@ This report summarizes what was implemented to harden PassMeet for an Aleo Testn
 
 These programs are `@noupgrade`, so any contract change requires a new program ID deployment.
 
-- Events/Tickets: `passmeet_v3_7788.aleo`
-- Subscriptions: `passmeet_subs_v3_7788.aleo`
+- Events/Tickets: `passmeet_v4_7788.aleo`
+- Subscriptions: `passmeet_subs_v4_7788.aleo`
 
 ## Verification (Local)
 
@@ -59,8 +59,8 @@ Green checks in this workspace:
   - `export ENDPOINT=https://api.explorer.provable.com/v1`
   - `bash scripts/deploy-leo.sh`
 4. Update deployment env:
-  - `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID=passmeet_v3_7788.aleo`
-  - `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID=passmeet_subs_v3_7788.aleo`
+  - `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID=passmeet_v4_7788.aleo`
+  - `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID=passmeet_subs_v4_7788.aleo`
   - `NEXT_PUBLIC_USDCX_TOKEN_ID=7788001field`
   - `NEXT_PUBLIC_USAD_TOKEN_ID=7788002field`
 5. One-time on-chain configuration (admin):

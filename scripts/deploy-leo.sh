@@ -62,7 +62,14 @@ CONTRACT_DIRS=(
 )
 
 for dir in "${CONTRACT_DIRS[@]}"; do
-  program_name="$(cd "${dir}" && sed -n 's/.*"program"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' program.json | head -n 1)"
+  program_name=""
+  if command -v python3 >/dev/null 2>&1; then
+    program_name="$(cd "${dir}" && python3 -c 'import json; print(json.load(open(\"program.json\"))[\"program\"])' 2>/dev/null || true)"
+  fi
+  if [[ -z "${program_name}" ]]; then
+    program_name="$(cd "${dir}" && sed -n 's/.*"program"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' program.json | head -n 1)"
+  fi
+  program_name="$(printf "%s" "${program_name}" | tr -d '\r')"
   if [[ -n "${program_name}" ]]; then
     # If the program already exists on-chain, Leo will fail with a confusing error.
     # Pre-check and guide the user to bump program IDs (contracts are @noupgrade).

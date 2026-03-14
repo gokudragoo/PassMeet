@@ -92,14 +92,14 @@ The auth secret must be a real random value (32+ chars) so signed session cookie
 - Renamed the confusing `contracts/passmeet_v1_7788` folder to `contracts/passmeet_events_7788` to remove the v1/v2 mismatch.
 - Added/kept deploy safety checks and a bump script so redeploys are always done under a unique program ID (programs are `@noupgrade`).
 - Bumped program IDs to the next version for the current release:
-  - `passmeet_v3_7788.aleo`
-  - `passmeet_subs_v3_7788.aleo`
+  - `passmeet_v4_7788.aleo`
+  - `passmeet_subs_v4_7788.aleo`
 
 ---
 
 ### C5. `configure_tokens` Not Idempotent — Admin Bootstrapping Issue
 
-**File:** [main.leo](file:///c:/Users/BMSIT/PassMeet/contracts/passmeet_v1_7788/src/main.leo#L34-L54)
+**File:** [main.leo](file:///c:/Users/BMSIT/PassMeet/contracts/passmeet_events_7788/src/main.leo)
 
 ```leo
 let current_admin: address = Mapping::get_or_use(admin, 0u8, caller);
@@ -301,7 +301,7 @@ While the app has [use-mobile.ts](file:///c:/Users/BMSIT/PassMeet/src/hooks/use-
 - Remove `version` field from manual record construction in `verifyEntry`
 - Add better Shield wallet error handling
 
-#### [MODIFY] [main.leo](file:///c:/Users/BMSIT/PassMeet/contracts/passmeet_v1_7788/src/main.leo)
+#### [MODIFY] [main.leo](file:///c:/Users/BMSIT/PassMeet/contracts/passmeet_events_7788/src/main.leo)
 - Fix nullifier computation to include `owner` for privacy
 - Verify `token_registry.aleo/transfer_private` return order
 

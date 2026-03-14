@@ -1,6 +1,8 @@
 import { ALEO_NETWORK, ALEO_RPC_URL, PASSMEET_V1_PROGRAM_ID } from "./aleo";
 
-const ALEO_JSON_RPC = process.env.NEXT_PUBLIC_ALEO_JSON_RPC || "https://api.explorer.provable.com/v2";
+// Optional JSON-RPC fallback for mapping reads. Provable Explorer REST is the primary path.
+// Leave unset unless you have a compatible Aleo JSON-RPC endpoint.
+const ALEO_JSON_RPC = process.env.NEXT_PUBLIC_ALEO_JSON_RPC || "";
 
 export interface OnChainEventInfo {
   id: number;
@@ -29,6 +31,7 @@ async function fetchMappingValueJsonRpc(
   mappingName: string,
   key: string
 ): Promise<string | null> {
+  if (!ALEO_JSON_RPC) return null;
   try {
     const response = await fetch(ALEO_JSON_RPC, {
       method: "POST",

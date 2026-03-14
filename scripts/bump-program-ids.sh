@@ -13,6 +13,7 @@
 # - contracts/*/src/main.leo + program.json
 # - src/lib/aleo.ts defaults
 # - .env.example + README.md references
+# - .env.local + .env (if present): updates only NEXT_PUBLIC_PASSMEET_* program IDs
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
@@ -60,22 +61,54 @@ fi
 
 next_v=$((curr_v + 1))
 
+program_exists() {
+  local program="$1"
+
+  if command -v leo >/dev/null 2>&1; then
+    leo -q query program "${program}" --network "${NETWORK}" --endpoint "${ENDPOINT}" >/dev/null 2>&1
+    return $?
+  fi
+
+  if command -v curl >/dev/null 2>&1; then
+    local url="${ENDPOINT}/${NETWORK}/program/${program}"
+    local code
+    code="$(curl -s -o /dev/null -w "%{http_code}" "${url}" || true)"
+    if [[ "${code}" == "200" ]]; then
+      return 0
+    fi
+    if [[ "${code}" == "404" ]]; then
+      return 1
+    fi
+    echo "Error: could not determine if program exists (${program}); got HTTP ${code} from ${url}" >&2
+    exit 1
+  fi
+
+  echo "Error: neither leo nor curl is available to check program ID availability." >&2
+  echo "Run this script in WSL (with leo installed) or install curl." >&2
+  exit 1
+}
+
 pick_available() {
   local candidate_v="$1"
+  local tries=0
   while true; do
+    tries=$((tries + 1))
+    if [[ "${tries}" -gt 200 ]]; then
+      echo "Error: too many attempts while picking an available program ID. Check ENDPOINT/NETWORK." >&2
+      exit 1
+    fi
+
     local cand_events="passmeet_v${candidate_v}_${suffix}.aleo"
     local cand_subs="passmeet_subs_v${candidate_v}_${suffix}.aleo"
 
-    if command -v leo >/dev/null 2>&1; then
-      # If either program exists, bump again.
-      if leo -q query program "${cand_events}" --network "${NETWORK}" --endpoint "${ENDPOINT}" >/dev/null 2>&1; then
-        candidate_v=$((candidate_v + 1))
-        continue
-      fi
-      if leo -q query program "${cand_subs}" --network "${NETWORK}" --endpoint "${ENDPOINT}" >/dev/null 2>&1; then
-        candidate_v=$((candidate_v + 1))
-        continue
-      fi
+    # If either program exists, bump again.
+    if program_exists "${cand_events}"; then
+      candidate_v=$((candidate_v + 1))
+      continue
+    fi
+    if program_exists "${cand_subs}"; then
+      candidate_v=$((candidate_v + 1))
+      continue
     fi
 
     echo "${candidate_v}"
@@ -121,6 +154,45 @@ for f in "${files[@]}"; do
     replace_bytes "${f}" "${current_subs}" "${new_subs}" || true
   fi
 done
+
+update_env_file() {
+  local env_file="$1"
+  if [[ ! -f "${env_file}" ]]; then
+    return 0
+  fi
+  python3 - "${env_file}" "${new_events}" "${new_subs}" <<'PY'
+import sys
+from pathlib import Path
+
+path = Path(sys.argv[1])
+events = sys.argv[2]
+subs = sys.argv[3]
+
+raw = path.read_text(encoding="utf-8", errors="ignore").splitlines(True)
+
+def set_var(lines, key, value):
+    out = []
+    found = False
+    for line in lines:
+        if line.startswith(key + "="):
+            out.append(f"{key}={value}\n")
+            found = True
+        else:
+            out.append(line)
+    if not found:
+        out.append(f"{key}={value}\n")
+    return out
+
+raw = set_var(raw, "NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID", events)
+raw = set_var(raw, "NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID", subs)
+
+path.write_text("".join(raw), encoding="utf-8")
+PY
+}
+
+# Keep local dev env in sync without touching secrets.
+update_env_file ".env.local"
+update_env_file ".env"
 
 echo "Updated program IDs:"
 echo "  events: ${current_events} -> ${new_events}"
