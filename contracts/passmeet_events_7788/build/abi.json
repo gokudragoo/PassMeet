@@ -1,5 +1,5 @@
 {
-  "program": "passmeet_v3_7788.aleo",
+  "program": "passmeet_v4_7788.aleo",
   "structs": [
     {
       "path": [
@@ -123,7 +123,7 @@
           "path": [
             "EventInfo"
           ],
-          "program": "passmeet_v3_7788"
+          "program": "passmeet_v4_7788"
         }
       }
     },
@@ -281,7 +281,7 @@
               "path": [
                 "Ticket"
               ],
-              "program": "passmeet_v3_7788"
+              "program": "passmeet_v4_7788"
             }
           },
           "mode": "None"
@@ -358,7 +358,7 @@
               "path": [
                 "Ticket"
               ],
-              "program": "passmeet_v3_7788"
+              "program": "passmeet_v4_7788"
             }
           },
           "mode": "None"
@@ -466,7 +466,7 @@
               "path": [
                 "Ticket"
               ],
-              "program": "passmeet_v3_7788"
+              "program": "passmeet_v4_7788"
             }
           },
           "mode": "None"
@@ -510,7 +510,7 @@
               "path": [
                 "Ticket"
               ],
-              "program": "passmeet_v3_7788"
+              "program": "passmeet_v4_7788"
             }
           },
           "mode": "None"

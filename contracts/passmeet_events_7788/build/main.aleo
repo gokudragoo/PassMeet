@@ -1,6 +1,6 @@
 import credits.aleo;
 import token_registry.aleo;
-program passmeet_v3_7788.aleo;
+program passmeet_v4_7788.aleo;
 
 record Ticket:
     owner as address.private;
@@ -51,7 +51,7 @@ function configure_tokens:
     is.neq r0 r1 into r4;
     assert.eq r4 true;
     async configure_tokens self.caller r0 r1 into r5;
-    output r5 as passmeet_v3_7788.aleo/configure_tokens.future;
+    output r5 as passmeet_v4_7788.aleo/configure_tokens.future;
 
 finalize configure_tokens:
     input r0 as address.public;
@@ -72,7 +72,7 @@ function create_event:
     gt r0 0u32 into r4;
     assert.eq r4 true;
     async create_event self.caller r0 r1 r2 r3 into r5;
-    output r5 as passmeet_v3_7788.aleo/create_event.future;
+    output r5 as passmeet_v4_7788.aleo/create_event.future;
 
 finalize create_event:
     input r0 as address.public;
@@ -108,7 +108,7 @@ function mint_free_ticket:
     cast self.signer r0 r1 into r2 as Ticket.record;
     async mint_free_ticket self.signer r0 r1 into r3;
     output r2 as Ticket.record;
-    output r3 as passmeet_v3_7788.aleo/mint_free_ticket.future;
+    output r3 as passmeet_v4_7788.aleo/mint_free_ticket.future;
 
 finalize mint_free_ticket:
     input r0 as address.public;
@@ -149,7 +149,7 @@ function purchase_ticket_with_credits:
     output r10 as Ticket.record;
     output r8 as credits.aleo/credits.record;
     output r9 as credits.aleo/credits.record;
-    output r11 as passmeet_v3_7788.aleo/purchase_ticket_with_credits.future;
+    output r11 as passmeet_v4_7788.aleo/purchase_ticket_with_credits.future;
 
 finalize purchase_ticket_with_credits:
     input r0 as u64.public;
@@ -195,7 +195,7 @@ function purchase_ticket:
     output r13 as Ticket.record;
     output r10 as token_registry.aleo/Token.record;
     output r11 as token_registry.aleo/Token.record;
-    output r14 as passmeet_v3_7788.aleo/purchase_ticket.future;
+    output r14 as passmeet_v4_7788.aleo/purchase_ticket.future;
 
 finalize purchase_ticket:
     input r0 as u64.public;
@@ -244,7 +244,7 @@ function verify_entry:
     cast r0.owner r0.event_id r0.ticket_id into r1 as TicketNullifierKey;
     hash.bhp256 r1 into r2 as field;
     async verify_entry r2 into r3;
-    output r3 as passmeet_v3_7788.aleo/verify_entry.future;
+    output r3 as passmeet_v4_7788.aleo/verify_entry.future;
 
 finalize verify_entry:
     input r0 as field.public;

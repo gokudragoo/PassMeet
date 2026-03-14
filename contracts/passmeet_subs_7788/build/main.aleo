@@ -1,6 +1,6 @@
 import credits.aleo;
 import token_registry.aleo;
-program passmeet_subs_v3_7788.aleo;
+program passmeet_subs_v4_7788.aleo;
 
 struct Subscription:
     subscriber as address;
@@ -28,7 +28,7 @@ function configure:
     input r0 as address.public;
     input r1 as field.public;
     input r2 as field.public;
-    is.neq r0 passmeet_subs_v3_7788.aleo into r3;
+    is.neq r0 passmeet_subs_v4_7788.aleo into r3;
     assert.eq r3 true;
     is.neq r1 0field into r4;
     assert.eq r4 true;
@@ -37,7 +37,7 @@ function configure:
     is.neq r1 r2 into r6;
     assert.eq r6 true;
     async configure self.caller r0 r1 r2 into r7;
-    output r7 as passmeet_subs_v3_7788.aleo/configure.future;
+    output r7 as passmeet_subs_v4_7788.aleo/configure.future;
 
 finalize configure:
     input r0 as address.public;
@@ -74,15 +74,15 @@ function subscribe_with_credits:
     async subscribe_with_credits self.signer r0 r1 r2 into r14;
     output r12 as credits.aleo/credits.record;
     output r13 as credits.aleo/credits.record;
-    output r14 as passmeet_subs_v3_7788.aleo/subscribe_with_credits.future;
+    output r14 as passmeet_subs_v4_7788.aleo/subscribe_with_credits.future;
 
 finalize subscribe_with_credits:
     input r0 as address.public;
     input r1 as u8.public;
     input r2 as address.public;
     input r3 as u64.public;
-    get.or_use treasury[0u8] passmeet_subs_v3_7788.aleo into r4;
-    is.neq r4 passmeet_subs_v3_7788.aleo into r5;
+    get.or_use treasury[0u8] passmeet_subs_v4_7788.aleo into r4;
+    is.neq r4 passmeet_subs_v4_7788.aleo into r5;
     assert.eq r5 true;
     is.eq r4 r2 into r6;
     assert.eq r6 true;
@@ -124,7 +124,7 @@ function subscribe:
     async subscribe self.signer r0 r1 r2 r3 r14 into r15;
     output r12 as token_registry.aleo/Token.record;
     output r13 as token_registry.aleo/Token.record;
-    output r15 as passmeet_subs_v3_7788.aleo/subscribe.future;
+    output r15 as passmeet_subs_v4_7788.aleo/subscribe.future;
 
 finalize subscribe:
     input r0 as address.public;
@@ -134,8 +134,8 @@ finalize subscribe:
     input r4 as field.public;
     input r5 as token_registry.aleo/transfer_private.future;
     await r5;
-    get.or_use treasury[0u8] passmeet_subs_v3_7788.aleo into r6;
-    is.neq r6 passmeet_subs_v3_7788.aleo into r7;
+    get.or_use treasury[0u8] passmeet_subs_v4_7788.aleo into r6;
+    is.neq r6 passmeet_subs_v4_7788.aleo into r7;
     assert.eq r7 true;
     is.eq r6 r2 into r8;
     assert.eq r8 true;
