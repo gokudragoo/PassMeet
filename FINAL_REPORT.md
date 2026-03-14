@@ -26,6 +26,7 @@ This report summarizes what was implemented to harden PassMeet for an Aleo Testn
 - Auth sessions are server-verified wallet signatures using HttpOnly cookies.
 - Added best-effort per-IP rate limiting for auth routes (`nonce` and `verify`).
 - Shield wallet no longer requires the extra "Onchain history" permission; tx-history reads are skipped and confirmations rely on `transactionStatus`.
+- RPC mapping reads are hardened for Provable: mapping reads prefer `/v1` and correctly handle "200 + null" responses before falling back.
 - Removed dev-only build tooling and restricted Next.js image host allowlist.
 - `npm audit` is clean (0 known vulnerabilities), including overrides to lift nested `zod` versions in Puzzle dependencies.
 - Removed legacy scripts that contained hardcoded private keys and placeholder token IDs.
@@ -39,11 +40,10 @@ These programs are `@noupgrade`, so any contract change requires a new program I
 
 ## Verification (Local)
 
-Green checks in this workspace:
+Notes for this workspace:
 
-- `npm run lint`
-- `npm run test:run`
-- `npm run build`
+- `npm run lint` passes.
+- `npm run test:run` and `npm run build` can fail on Windows in restricted environments with `spawn EPERM`. Use WSL or CI (Linux) for the authoritative build/test pass.
 - Leo contract build: `bash scripts/build-leo.sh` (WSL)
 - `npm audit` (0 vulnerabilities)
 

@@ -1,77 +1,68 @@
 # PassMeet (Aleo Testnet)
 
-PassMeet is a privacy-first event ticketing and gate verification app built on Aleo. Tickets are private Aleo records, and entry is verified on-chain with zero-knowledge proofs plus one-time nullifiers to prevent replay.
+PassMeet is a privacy-first event ticketing and gate verification app built on Aleo. Tickets are private Aleo records; entry is verified on-chain using zero-knowledge proofs plus a one-time nullifier to prevent replay.
 
 ---
 
-## What We've Built
+## Update (March 2026)
 
-This repo includes:
+Summary of what was implemented in this repo to make the app reliable and "production-ready for testnet":
 
-- **Next.js 15 app** — Frontend + API routes with App Router
-- **Two Aleo programs** — Events/tickets (`passmeet_v4_7788.aleo`) and subscriptions (`passmeet_subs_v4_7788.aleo`)
-- **IPFS metadata** — Pinata persistence (optional but recommended)
-- **First-class payment rails** — `credits.aleo`, USDCx, and USAD via `token_registry.aleo`
-
----
-
-## Features Implemented
-
-### Payments (Hackathon Compliance)
-
-- **Stablecoin rails** — USDCx and USAD are handled via `token_registry.aleo` using a single payment primitive (no placeholder token IDs when configured)
-- **Atomic ticket purchase** — Transfer + mint happens in one on-chain flow; sold-out or stale `ticket_id` failures do not charge the buyer
-- **Atomic subscription purchase** — Paid subscriptions store validity using chain `block.height` (no browser-time truth)
-- **Per-rail on-chain pricing** — Events support `price_credits`, `price_usdcx`, and `price_usad`; `0` disables a rail
-- **Split flows** — Free events use `mint_free_ticket`; paid events use `purchase_ticket_with_credits` (credits) or `purchase_ticket` (USDCx/USAD)
-
-### Minting + Gate Reliability
-
-- **Shield Wallet compatible** — All `Mapping::get()` calls moved from transitions into finalize functions (Shield rejects mapping reads in transitions)
-- **Ticket ID concurrency** — Client re-reads on-chain `ticket_count` before each mint attempt; retries on stale `ticket_id` failures
-- **Transaction state handling** — Explicit states: `submitted`, `confirmed`, `timed_out`, `failed`, `rejected`; no "phantom success" when a tx is still pending
-- **Gate verification** — Uses wallet-native records; no non-standard `version` field injection; recovery via `requestTransactionHistory` before retrying
-
-### Privacy Model (Nullifiers)
-
-- **Unpredictable nullifiers** — Gate verification hashes a collision-free tuple `(event_id, ticket_id)` so `(1,2)` and `(2,1)` cannot collide
-- **Private by default** — Ticket ownership, payments, and gate proofs remain private; only validity and nullifier spend are on-chain
-
-### Security + Ops
-
-- **Server-verified auth** — Wallet signatures verified server-side; HttpOnly cookie sessions (no localStorage auth fallbacks)
-- **Events API protected** — `POST /api/events` requires a valid session; returns 401 if unauthenticated
-- **Rate limiting** — Best-effort per-IP rate limiting on auth routes (`nonce`, `verify`)
-- **Env security** — `.env`, `.env.local` gitignored; `PASSMEET_AUTH_SECRET` enforced (32+ chars)
-- **Image allowlist** — Restricted to known hosts (Unsplash + IPFS gateways)
-- **Clean audit** — `npm audit` clean (0 known vulnerabilities)
-
-### Metadata Durability
-
-- **Explicit persistence** — Event creation only shows "created" when both on-chain event and metadata write succeed
-- **Graceful fallback** — If IPFS is unavailable, events still load from on-chain data with placeholder metadata
-- **Safe IPFS updates** — Upload new index first, then retire old (no destructive unpin-before-success)
+- Real payments: `credits.aleo` plus USDCx/USAD via `token_registry.aleo` (no placeholder token IDs).
+- Atomic paid flows: payment transfer and ticket mint (or subscription purchase) happen in one on-chain flow.
+- Shield compatibility: no `Mapping::get()` in transitions; all reads happen in finalize.
+- Wallet auth sessions: server-verified signature flow with an HttpOnly cookie (no localStorage auth fallback).
+- Transaction UX hardening: explicit `submitted/confirmed/timed_out/failed/rejected` states; no phantom success.
+- RPC hardening: mapping reads prefer Provable `/v1` (even if `NEXT_PUBLIC_ALEO_RPC_URL` is `/v2`) and correctly handle "200 + null" responses.
+- Metadata durability: optional Pinata/IPFS with timeouts; fallback to on-chain discoverability if IPFS is missing.
+- DevOps scripts: WSL-friendly deploy, bump program IDs, token registration + minting, and auth-secret generation.
 
 ---
 
 ## Name, Description, Problem Being Solved
 
 ### Name
+
 PassMeet
 
 ### Description
+
 Privacy-preserving event creation, ticket purchase/mint, and gate verification on Aleo.
 
 ### Problem
+
 Traditional ticketing systems leak attendee identity and purchase history, rely on centralized databases, and use QR codes that are easy to copy. PassMeet moves ownership and validity checks on-chain while keeping ticket ownership private.
 
 ---
 
 ## Why Privacy Matters (For Ticketing)
 
-- Attendees prove "I have a valid ticket" without revealing wallet address or transaction history
-- Organizers prevent ticket reuse without maintaining a central attendee list
-- Reducing off-chain PII and central databases reduces breach and surveillance risk
+- Attendees prove "I have a valid ticket" without revealing wallet address or transaction history.
+- Organizers prevent ticket reuse without maintaining a central attendee list.
+- Reducing off-chain PII and central databases reduces breach and surveillance risk.
+
+---
+
+## Privacy Model Explanation
+
+PassMeet is designed so "ownership and validity" can be verified without creating a public attendee list.
+
+What is private:
+
+- Ticket ownership is a private `Ticket` record owned by the attendee.
+- Payments use private records: `credits.aleo/credits` and `token_registry.aleo/Token`.
+- Gate verification consumes the private ticket record; the verifier does not need a public attendee registry.
+
+What is public:
+
+- Event parameters and counts (capacity, ticket_count, on-chain pricing rails) are stored in mappings.
+- A one-time nullifier spend is stored on-chain to prevent replay (no QR re-use).
+
+Nullifier design:
+
+- The nullifier is derived from a collision-free tuple that includes the (private) ticket owner:
+  - `hash(ticket_owner, event_id, ticket_id) -> field`
+- This prevents collisions (e.g. `(1,2)` vs `(2,1)`) and prevents third parties from precomputing which tickets have been used.
 
 ---
 
@@ -81,19 +72,34 @@ Traditional ticketing systems leak attendee identity and purchase history, rely 
 
 | Component | Description |
 |-----------|-------------|
-| **Next.js App Router** | Organizer dashboard, tickets, gate, subscription pages |
-| **API Routes** | Auth (nonce, verify, session, logout), events metadata (IPFS) |
-| **Aleo Programs** | `passmeet_v4_7788.aleo` (events/tickets), `passmeet_subs_v4_7788.aleo` (subscriptions) |
-| **Payments** | `credits.aleo` for Aleo credits; `token_registry.aleo` for USDCx/USAD |
-| **RPC** | Provable Explorer API (primary); JSON-RPC fallback configurable |
-| **Wallets** | Shield, Leo, Puzzle, Fox |
+| Next.js App Router | Organizer dashboard, tickets, gate, subscription pages |
+| API Routes | Auth (nonce, verify, session, logout), event metadata persistence (IPFS) |
+| Aleo Programs | Events/tickets and subscriptions programs (IDs are configurable via env) |
+| Payments | `credits.aleo` for credits; `token_registry.aleo` for USDCx/USAD |
+| RPC | Provable Explorer REST (`/v1` for mappings), optional JSON-RPC fallback |
+| Wallets | Shield, Leo, Puzzle, Fox |
+
+### Programs (This Repo)
+
+- Events/Tickets: `passmeet_v4_7788.aleo`
+- Subscriptions: `passmeet_subs_v4_7788.aleo`
+
+These programs are `@noupgrade`. Any contract change requires deploying under new, unique program IDs.
 
 ### Data Flow
 
-- **Create event** — UI → wallet `create_event(capacity, price_credits, price_usdcx, price_usad)` → `POST /api/events` (metadata to IPFS)
-- **Buy ticket** — Free: `mint_free_ticket(event_id, ticket_id)`; Paid credits: `purchase_ticket_with_credits(event_id, ticket_id, organizer, price, credits_record)`; Paid tokens: `purchase_ticket(event_id, ticket_id, organizer, expected_amount, token_record)`
-- **Gate verify** — `verify_entry(ticket)` → one-time nullifier set on-chain
-- **Subscribe** — `subscribe_with_credits(tier, treasury, price, credits_record)` or `subscribe(tier, treasury, expected_amount, token_record)`
+- Create event:
+  - UI -> wallet `create_event(capacity, price_credits, price_usdcx, price_usad)`
+  - Optional: `POST /api/events` to persist metadata to IPFS
+- Buy ticket:
+  - Free: `mint_free_ticket(event_id, ticket_id)`
+  - Paid credits: `purchase_ticket_with_credits(event_id, ticket_id, organizer, price, credits_record)`
+  - Paid tokens: `purchase_ticket(event_id, ticket_id, organizer, expected_amount, payment_token_id, token_record)`
+- Gate verify:
+  - `verify_entry(ticket)` -> one-time nullifier set on-chain
+- Subscribe:
+  - Credits: `subscribe_with_credits(tier, treasury, price, credits_record)`
+  - Tokens: `subscribe(tier, treasury, expected_amount, payment_token_id, token_record)`
 
 ### High-Level Diagram
 
@@ -103,9 +109,9 @@ flowchart LR
   U --> UI["Next.js UI"]
   UI --> API["API Routes"]
   API --> IPFS["Pinata / IPFS"]
-  W --> RPC["Aleo RPC"]
-  RPC --> A1["passmeet_v4_7788.aleo"]
-  RPC --> A2["passmeet_subs_v4_7788.aleo"]
+  W --> RPC["Provable Explorer API"]
+  RPC --> A1["Events/Tickets Program"]
+  RPC --> A2["Subscriptions Program"]
   A1 --> CR["credits.aleo"]
   A1 --> TR["token_registry.aleo"]
   A2 --> CR
@@ -114,18 +120,25 @@ flowchart LR
 
 ---
 
-## Production Hardening (Implemented)
+## Product Market Fit (PMF) and Go-To-Market (GTM)
 
-| Area | Status |
-|------|--------|
-| Shield Wallet mint | ✅ Fixed (mapping reads in finalize only) |
-| Payment rails | ✅ Credits + USDCx/USAD via token_registry |
-| Auth sessions | ✅ Server-verified, HttpOnly cookies |
-| Transaction states | ✅ No phantom success |
-| Events API | ✅ Session auth on POST |
-| Nullifiers | ✅ Collision-free |
-| Env security | ✅ .env.local gitignored, secret enforced |
-| RPC fallback | ✅ Configurable (testnet3 deprecated) |
+PMF hypothesis:
+
+- People want tickets that are hard to counterfeit, easy to verify, and do not create a public attendee list.
+- Organizers want fewer fraud/support cases and simpler gate operations without collecting PII.
+
+Initial target users:
+
+- Web3 conferences and meetups (attendees already have wallets).
+- Privacy-sensitive communities (invite-only events, DAOs, alumni groups).
+- Hackathons and ecosystem events (fast distribution + feedback loops).
+
+GTM plan (testnet -> mainnet):
+
+- Start with Aleo ecosystem pilots: 2-5 organizers, measure gate throughput and failure rate.
+- Publish a "gate kit" playbook: best practices, wallet matrix recommendations, and fallback flows.
+- Partner integrations: wallets, community platforms, and event hosts with existing ticketing friction.
+- Expand rails: stablecoin-first pricing for USD-denominated tickets while keeping credits.aleo available.
 
 ---
 
@@ -142,23 +155,32 @@ Copy `.env.example` to `.env.local` and configure:
 
 | Variable | Required | Description |
 |----------|----------|-------------|
-| `PASSMEET_AUTH_SECRET` | **Yes** | 32+ char random string. Run `node scripts/generate_auth_secret.mjs` |
-| `PINATA_JWT` | No | Enables IPFS metadata; without it, events use placeholder metadata |
+| `PASSMEET_AUTH_SECRET` | Yes | 32+ char random string (used to sign the session cookie). Placeholder values are rejected. |
 | `NEXT_PUBLIC_ALEO_NETWORK` | No | `testnet` or `mainnet` (default: testnet) |
-| `NEXT_PUBLIC_ALEO_RPC_URL` | No | Default: https://api.explorer.provable.com/v2 |
-| `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID` | Yes | Deployed events program (e.g. `passmeet_v4_7788.aleo`) |
-| `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` | Yes | Deployed subscriptions program |
+| `NEXT_PUBLIC_ALEO_RPC_URL` | No | Default: `https://api.explorer.provable.com/v2` (mapping reads will still prefer `/v1`) |
+| `NEXT_PUBLIC_ALEO_JSON_RPC` | No | Optional JSON-RPC fallback for mapping reads |
+| `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID` | Yes | Deployed events program ID |
+| `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` | Yes | Deployed subscriptions program ID |
+| `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID` | Yes (payments) | `token_registry.aleo` |
 | `NEXT_PUBLIC_USDCX_TOKEN_ID` | For USDCx | Field literal after token registration |
 | `NEXT_PUBLIC_USAD_TOKEN_ID` | For USAD | Field literal after token registration |
+| `PINATA_JWT` | No | Enables IPFS metadata persistence |
+| `NEXT_PUBLIC_GATEWAY_URL` | No | IPFS gateway for image/metadata reads |
 
-### Install and Run
+Generate a real auth secret (writes to `.env.local` if missing):
+
+```bash
+node scripts/generate_auth_secret.mjs
+```
+
+Install and run:
 
 ```bash
 npm install
 npm run dev
 ```
 
-### Quality Gates
+Quality gates:
 
 ```bash
 npm run lint
@@ -166,40 +188,55 @@ npm run test:run
 npm run build
 ```
 
+Note: In some restricted Windows environments, `next build` and test runners can fail due to process spawn restrictions. Use WSL or CI (Linux) as the authoritative build/test pass.
+
 ---
 
 ## Deploy Contracts (WSL / Leo)
 
-Programs are `@noupgrade`. Contract changes require a new program ID and redeploy.
+These programs are `@noupgrade`. Any contract change requires a new program ID deployment.
 
-1. **Build:** `bash scripts/build-leo.sh` (or `npm run build:contracts`)
-2. **Deploy:** `export NETWORK=testnet; export ENDPOINT=https://api.explorer.provable.com/v1; bash scripts/deploy-leo.sh`
-3. **Update env** with deployed program IDs
+If you already deployed the current program IDs, bump to a new unique version:
 
-Never put your Aleo private key in `.env`. Use `PRIVATE_KEY` in the shell or let the script prompt.
+```bash
+export NETWORK=testnet
+export ENDPOINT=https://api.explorer.provable.com/v1
+bash scripts/bump-program-ids.sh
+```
+
+Deploy:
+
+```bash
+export NETWORK=testnet
+export ENDPOINT=https://api.explorer.provable.com/v1
+bash scripts/deploy-leo.sh
+```
+
+Never put your Aleo private key in `.env`. Use `PRIVATE_KEY` in your shell or let the script prompt.
 
 ---
 
 ## One-Time Admin Configuration (Required for USDCx/USAD)
 
-Token rails need both frontend env vars and on-chain config:
+Token rails need both frontend env vars and on-chain config.
 
-**Event program:**
+Event program (first caller becomes admin):
+
 ```leo
 configure_tokens(usdcx_token_id, usad_token_id)
 ```
-First caller becomes admin.
 
-**Subscription program:**
+Subscription program (first caller becomes admin):
+
 ```leo
 configure(treasury_address, usdcx_token_id, usad_token_id)
 ```
-First caller becomes admin.
 
-**Token registration (one-time):**
+Token registration + mint (one-time):
+
 ```bash
 bash scripts/register_and_mint_tokens.sh
-bash scripts/check_tokens.sh  # verify
+bash scripts/check_tokens.sh
 ```
 
 ---
@@ -209,37 +246,38 @@ bash scripts/check_tokens.sh  # verify
 | Path | Description |
 |------|-------------|
 | `src/app/` | Pages (organizer, tickets, gate, subscription) |
-| `src/app/api/` | Auth, events API routes |
+| `src/app/api/` | Auth and event metadata routes |
 | `src/context/` | PassMeetContext (events, tickets, auth, buyTicket, verifyEntry) |
-| `src/lib/` | aleo, aleo-rpc, aleo-subs-rpc, auth, pinata, walletTx, aleoRecords |
+| `src/lib/` | Aleo config + RPC helpers, auth helpers, Pinata, walletTx, record parsing |
 | `contracts/passmeet_events_7788/` | Events + tickets Leo program |
 | `contracts/passmeet_subs_7788/` | Subscriptions Leo program |
-| `scripts/` | build-leo, deploy-leo, register_and_mint_tokens, generate_auth_secret |
+| `scripts/` | build/deploy, bump IDs, token registration, auth secret |
 
 ---
 
 ## Deployment Checklist (Testnet)
 
-1. Generate auth secret: `node scripts/generate_auth_secret.mjs` → set `PASSMEET_AUTH_SECRET` in Vercel
-2. Register + mint USDCx/USAD: `bash scripts/register_and_mint_tokens.sh`
-3. Deploy contracts: `bash scripts/deploy-leo.sh`
-4. Set env: `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID`, `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID`, token IDs
-5. One-time on-chain: `configure_tokens`, `configure`
-6. Optional: `PINATA_JWT` for IPFS metadata
+1. Generate auth secret: `node scripts/generate_auth_secret.mjs` then set `PASSMEET_AUTH_SECRET` in your deployment env.
+2. Register + mint USDCx/USAD (one-time): `bash scripts/register_and_mint_tokens.sh` (verify with `bash scripts/check_tokens.sh`).
+3. Deploy contracts (WSL): `bash scripts/deploy-leo.sh` (bump IDs first if needed).
+4. Set env: `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID`, `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID`, and token IDs.
+5. One-time on-chain admin config: `configure_tokens` (organizer page) and `configure` (subscription page).
+6. Optional: set `PINATA_JWT` for IPFS metadata persistence.
 
 ---
 
 ## Future Work
 
-- Enforce subscription-tier limits (or update tier copy)
-- Add `update_event` / `cancel_event` transitions
-- Durable metadata index (DB) for production
-- More automated tests (walletTx, aleoRecords, auth, contract integration)
-- Activity log (tickets, gate verifies, subscriptions)
-- Event image upload to IPFS
+- Enforce subscription-tier limits (or align tier copy with what is actually enforced).
+- Add `update_event` / `cancel_event` transitions.
+- Add a durable metadata index (database) for production deployments.
+- Expand automated tests (walletTx, record parsing, auth routes, contract integration).
+- Add an activity log (tickets, gate verifies, subscriptions).
+- Support user-uploaded event images stored on IPFS.
 
 ---
 
 ## License
 
 MIT
+

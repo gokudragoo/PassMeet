@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { motion } from "framer-motion";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
 import { Button } from "@/components/ui/button";
@@ -53,21 +53,22 @@ export default function OrganizerPage() {
   const envUsad = normalizeFieldLiteral(USAD_TOKEN_ID);
   const tokenInputsDisabled = !envUsdcx || !envUsad || !tokenRailsConfigured;
 
-  useEffect(() => {
-    let cancelled = false;
-    const load = async () => {
-      try {
-        const [usdcx, usad] = await Promise.all([getConfiguredTokenId(0), getConfiguredTokenId(1)]);
-        if (!cancelled) setTokenConfig({ usdcx: usdcx ?? null, usad: usad ?? null, loading: false });
-      } catch {
-        if (!cancelled) setTokenConfig({ usdcx: null, usad: null, loading: false });
+  const loadTokenConfig = useCallback(async () => {
+    setTokenConfig((prev) => ({ ...prev, loading: true }));
+    try {
+      const [usdcx, usad] = await Promise.all([getConfiguredTokenId(0), getConfiguredTokenId(1)]);
+      setTokenConfig({ usdcx: usdcx ?? null, usad: usad ?? null, loading: false });
+      if (usdcx === envUsdcx && usad === envUsad) {
+        setTokenConfigureNote(null);
       }
-    };
-    load();
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+    } catch {
+      setTokenConfig({ usdcx: null, usad: null, loading: false });
+    }
+  }, [envUsdcx, envUsad]);
+
+  useEffect(() => {
+    loadTokenConfig();
+  }, [loadTokenConfig]);
 
   const handleConfigureTokens = async () => {
     if (!address) {
@@ -129,7 +130,7 @@ export default function OrganizerPage() {
       }
 
       if (lastUsdcx !== envUsdcx || lastUsad !== envUsad) {
-        // Last-chance: check wallet status quickly for a definite failure.
+        // Mapping didn't update; check tx status. If confirmed, treat as configured (graceful degradation).
         const confirm = await pollForTxHash(tempId, transactionStatus, {
           maxAttempts: 25,
           program: PASSMEET_V1_PROGRAM_ID,
@@ -138,6 +139,16 @@ export default function OrganizerPage() {
         });
         if (confirm.state === "rejected") throw new Error("Configuration was rejected in your wallet.");
         if (confirm.state === "failed") throw new Error("Configuration failed on-chain.");
+
+        if (confirm.state === "confirmed") {
+          // Tx confirmed but mapping not visible yet. Treat as configured using env values.
+          toast.success("Token rails configured!", {
+            description: "Mapping may take a minute to appear. You can create events now.",
+          });
+          setTokenConfig({ usdcx: envUsdcx, usad: envUsad, loading: false });
+          setTokenConfigureNote(null);
+          return;
+        }
 
         setTokenConfigureNote(
           "Transaction submitted, but the on-chain config is not visible yet. Wait 1-2 minutes, then click Refresh or Configure again. (Shield can be slow to index.)"
@@ -301,18 +312,31 @@ export default function OrganizerPage() {
                           : "USDCx/USAD are not configured yet."}
                     </p>
                   </div>
-                  {!tokenRailsConfigured && (
+                  <div className="flex items-center gap-2">
                     <Button
                       type="button"
-                      variant="outline"
+                      variant="ghost"
                       size="sm"
-                      onClick={handleConfigureTokens}
-                      disabled={!address || configuringTokens || tokenConfig.loading}
-                      className="border-primary/30 text-primary hover:bg-primary/10"
+                      onClick={loadTokenConfig}
+                      disabled={tokenConfig.loading}
+                      className="text-zinc-400 hover:text-white"
+                      title="Re-check on-chain mapping"
                     >
-                      {configuringTokens ? <Loader2 className="h-4 w-4 animate-spin" /> : "Configure"}
+                      <RefreshCw className={`h-4 w-4 ${tokenConfig.loading ? "animate-spin" : ""}`} />
                     </Button>
-                  )}
+                    {!tokenRailsConfigured && (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={handleConfigureTokens}
+                        disabled={!address || configuringTokens || tokenConfig.loading}
+                        className="border-primary/30 text-primary hover:bg-primary/10"
+                      >
+                        {configuringTokens ? <Loader2 className="h-4 w-4 animate-spin" /> : "Configure"}
+                      </Button>
+                    )}
+                  </div>
                 </div>
                 {(!envUsdcx || !envUsad) && (
                   <p className="mt-3 text-xs text-yellow-400/90">

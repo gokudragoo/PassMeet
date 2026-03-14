@@ -610,6 +610,11 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         throw new Error("Timed out waiting for the event to appear on-chain. Check your wallet for the transaction status and try again.");
       }
 
+      const historyBefore = await snapshotTxHistory(
+        allowTxHistory ? requestTransactionHistory : undefined,
+        PASSMEET_V1_PROGRAM_ID
+      );
+
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "create_event",
@@ -620,27 +625,58 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const tempId = result?.transactionId;
       LOG("createEvent: tx submitted", { tempId });
       if (tempId) {
-        // Primary confirmation: observe on-chain state (event_counter + events mapping).
-        // This avoids Shield's occasional "transaction not found" flakiness during indexing.
-        const newOnChainId = await pollForMyEventId();
+        let newOnChainId: number;
+        let fallbackTxHash: string | null = null;
+        try {
+          // Primary confirmation: observe on-chain state (event_counter + events mapping).
+          // This avoids Shield's occasional "transaction not found" flakiness during indexing.
+          newOnChainId = await pollForMyEventId();
+        } catch (mappingErr) {
+          // Fallback: Provable mapping may be delayed. Use tx status to confirm.
+          LOG("createEvent: mapping poll failed, trying pollForTxHash fallback", (mappingErr as Error)?.message);
+          const confirm = await pollForTxHash(tempId, transactionStatus, {
+            maxAttempts: 45,
+            program: PASSMEET_V1_PROGRAM_ID,
+            requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
+            historyBefore,
+          });
+          if (confirm.state === "rejected") {
+            throw new Error("Transaction was rejected.");
+          }
+          if (confirm.state === "failed") {
+            throw new Error("Transaction failed on-chain.");
+          }
+          if (confirm.state === "confirmed" && prevCount === 0) {
+            // Optimistic: first event has ID 1 when prevCount was 0.
+            newOnChainId = 1;
+            fallbackTxHash = confirm.txHash;
+            LOG("createEvent: tx confirmed, using optimistic eventId=1 (prevCount=0)");
+          } else if (confirm.state === "confirmed") {
+            throw new Error("Event may have been created. Refresh the page to see it.");
+          } else {
+            throw new Error(
+              "Provable indexer may be delayed. Check your wallet for transaction status. If confirmed, refresh the page."
+            );
+          }
+        }
 
         // Best-effort: resolve an on-chain tx hash for explorer links, but don't block on it.
-        // The on-chain event presence already proves confirmation.
-        let txHash = tempId;
-        try {
-          const status = await transactionStatus(tempId);
-          if (status?.transactionId && isOnChainTxHash(status.transactionId)) {
-            txHash = status.transactionId;
-          }
-          const s = String((status as { status?: unknown } | null)?.status ?? "").toLowerCase();
-          if (s === "rejected") throw new Error("Transaction was rejected.");
-          if (s === "failed") throw new Error("Transaction failed on-chain.");
-        } catch (e) {
-          // Ignore "transaction not found" during indexing; tx hash will appear later in wallet history.
-          const msg = (e as Error)?.message?.toLowerCase?.() ?? "";
-          if (!msg.includes("transaction not found") && !msg.includes("no such transaction")) {
-            // Other errors are still useful signals.
-            LOG("createEvent: transactionStatus error", msg);
+        let txHash = fallbackTxHash ?? tempId;
+        if (!fallbackTxHash) {
+          try {
+            const status = await transactionStatus(tempId);
+            if (status?.transactionId && isOnChainTxHash(status.transactionId)) {
+              txHash = status.transactionId;
+            }
+            const s = String((status as { status?: unknown } | null)?.status ?? "").toLowerCase();
+            if (s === "rejected") throw new Error("Transaction was rejected.");
+            if (s === "failed") throw new Error("Transaction failed on-chain.");
+          } catch (e) {
+            // Ignore "transaction not found" during indexing; tx hash will appear later in wallet history.
+            const msg = (e as Error)?.message?.toLowerCase?.() ?? "";
+            if (!msg.includes("transaction not found") && !msg.includes("no such transaction")) {
+              LOG("createEvent: transactionStatus error", msg);
+            }
           }
         }
 
@@ -714,7 +750,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to create event:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus]);
+  }, [address, executeTransaction, transactionStatus, requestTransactionHistory, allowTxHistory]);
 
   // ---- Buy Ticket ----
   const buyTicket = useCallback(async (event: Event, rail: PaymentRail = "credits"): Promise<string | null> => {

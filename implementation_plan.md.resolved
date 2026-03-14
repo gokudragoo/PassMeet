@@ -50,6 +50,9 @@ Important: both programs are `@noupgrade`. Any contract change requires deployin
   - the client re-reads `ticket_count` and retries only when the failure indicates a stale `ticket_id`.
 - Shield wallet is supported without requiring "Onchain history" permission:
   - tx-history reads (`requestTransactionHistory`) are skipped for Shield, and confirmations rely on `transactionStatus`.
+- RPC mapping reads are hardened for Provable:
+  - mapping reads prefer `/v1` even when `NEXT_PUBLIC_ALEO_RPC_URL` is configured as `/v2`
+  - handles the case where a `/v2` endpoint returns HTTP 200 with a `"null"` body by trying other base candidates before giving up
 - Wallet record usage is hardened:
   - gate verification prefers wallet-native record formats; fallback plaintext formatting is minimal and avoids non-standard fields.
 
@@ -139,4 +142,3 @@ If deployments fail with "Program ID is already deployed":
 - Durable metadata index (database) for production deployments.
 - Expanded automated tests (walletTx, record parsing, auth routes, and integration tests).
 - Optional: user-uploaded event images stored on IPFS (replace default Unsplash-only images).
-

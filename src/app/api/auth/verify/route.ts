@@ -71,7 +71,16 @@ export async function POST(request: Request) {
 
     const nonceToken = cookieStore.get(PASSMEET_NONCE_COOKIE)?.value;
     if (!nonceToken) {
-      return NextResponse.json({ error: "No nonce found. Request a new one." }, { status: 401 });
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[PassMeet Auth] verify: no nonce cookie");
+      }
+      return NextResponse.json(
+        {
+          error: "Session expired. Please sign in again.",
+          ...(process.env.NODE_ENV === "development" && { code: "no_nonce" }),
+        },
+        { status: 401 }
+      );
     }
 
     const secret = getPassMeetAuthSecret();
@@ -118,7 +127,16 @@ export async function POST(request: Request) {
     }
 
     if (!signature) {
-      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[PassMeet Auth] verify: invalid signature format");
+      }
+      return NextResponse.json(
+        {
+          error: "Signature format not supported. Try a different wallet.",
+          ...(process.env.NODE_ENV === "development" && { code: "invalid_signature" }),
+        },
+        { status: 400 }
+      );
     }
 
     let aleoAddress: ReturnType<typeof Address.from_string>;
@@ -131,7 +149,16 @@ export async function POST(request: Request) {
     const msgBytes = new TextEncoder().encode(nonceRes.payload.message);
     const ok = aleoAddress.verify(msgBytes, signature);
     if (!ok) {
-      return NextResponse.json({ error: "Signature verification failed" }, { status: 401 });
+      if (process.env.NODE_ENV === "development") {
+        console.warn("[PassMeet Auth] verify: signature verification failed");
+      }
+      return NextResponse.json(
+        {
+          error: "Signature did not verify. Ensure you're signing the exact message.",
+          ...(process.env.NODE_ENV === "development" && { code: "signature_verification_failed" }),
+        },
+        { status: 401 }
+      );
     }
 
     cookieStore.delete(PASSMEET_NONCE_COOKIE);

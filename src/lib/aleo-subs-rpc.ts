@@ -19,13 +19,20 @@ function uniqueStrings(items: string[]): string[] {
   return out;
 }
 
-function provableBaseCandidates(base: string): string[] {
+function stripNetworkSuffix(base: string): string {
   const trimmed = (base || "").replace(/\/+$/, "");
-  const candidates = [trimmed];
+  const suffix = `/${ALEO_NETWORK}`;
+  return trimmed.endsWith(suffix) ? trimmed.slice(0, -suffix.length) : trimmed;
+}
+
+function provableBaseCandidates(base: string): string[] {
+  const trimmed = stripNetworkSuffix((base || "").replace(/\/+$/, ""));
+  const candidates: string[] = [];
   const v1 = trimmed.replace(/\/v2$/, "/v1");
   if (v1 !== trimmed) candidates.push(v1);
+  candidates.push(trimmed);
   candidates.push(PROVABLE_V1_FALLBACK);
-  return uniqueStrings(candidates);
+  return uniqueStrings(candidates.map(stripNetworkSuffix));
 }
 
 async function fetchWithTimeout(url: string): Promise<Response> {
@@ -48,7 +55,8 @@ async function fetchSubsMappingValue(mappingName: string, key: string): Promise<
   const bases = provableBaseCandidates(ALEO_RPC_URL);
   for (const base of bases) {
     try {
-      const url = `${base}/${ALEO_NETWORK}/program/${PASSMEET_SUBS_PROGRAM_ID}/mapping/${mappingName}/${encodeURIComponent(key)}`;
+      const baseNoNetwork = stripNetworkSuffix(base);
+      const url = `${baseNoNetwork}/${ALEO_NETWORK}/program/${PASSMEET_SUBS_PROGRAM_ID}/mapping/${mappingName}/${encodeURIComponent(key)}`;
       const response = await fetchWithTimeout(url);
 
       if (response.ok) {
@@ -61,7 +69,7 @@ async function fetchSubsMappingValue(mappingName: string, key: string): Promise<
           cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
           if (cleaned) return cleaned;
         }
-        return null;
+        continue;
       }
 
       if (process.env.NODE_ENV === "development") {

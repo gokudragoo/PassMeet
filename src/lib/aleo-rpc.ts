@@ -19,17 +19,24 @@ function uniqueStrings(items: string[]): string[] {
   return out;
 }
 
-function provableBaseCandidates(base: string): string[] {
+function stripNetworkSuffix(base: string): string {
   const trimmed = (base || "").replace(/\/+$/, "");
-  const candidates = [trimmed];
+  const suffix = `/${ALEO_NETWORK}`;
+  return trimmed.endsWith(suffix) ? trimmed.slice(0, -suffix.length) : trimmed;
+}
 
-  // Many examples use /v2 in env, but mapping reads are stable on /v1.
-  // Try /v1 if /v2 is configured.
+function provableBaseCandidates(base: string): string[] {
+  const trimmed = stripNetworkSuffix((base || "").replace(/\/+$/, ""));
+  const candidates: string[] = [];
+
+  // Many env examples use /v2, but mapping reads are stable on /v1.
+  // Prefer /v1 first when /v2 is configured.
   const v1 = trimmed.replace(/\/v2$/, "/v1");
   if (v1 !== trimmed) candidates.push(v1);
 
+  candidates.push(trimmed);
   candidates.push(PROVABLE_V1_FALLBACK);
-  return uniqueStrings(candidates);
+  return uniqueStrings(candidates.map(stripNetworkSuffix));
 }
 
 async function fetchWithTimeout(url: string): Promise<Response> {
@@ -102,7 +109,8 @@ async function fetchMappingValue(
   const bases = provableBaseCandidates(ALEO_RPC_URL);
   for (const base of bases) {
     try {
-      const url = `${base}/${ALEO_NETWORK}/program/${programId}/mapping/${mappingName}/${encodeURIComponent(key)}`;
+      const baseNoNetwork = stripNetworkSuffix(base);
+      const url = `${baseNoNetwork}/${ALEO_NETWORK}/program/${programId}/mapping/${mappingName}/${encodeURIComponent(key)}`;
       const response = await fetchWithTimeout(url);
 
       if (response.ok) {
@@ -115,7 +123,10 @@ async function fetchMappingValue(
           cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
           if (cleaned) return cleaned;
         }
-        return null;
+
+        // Some Provable variants (notably /v2) can return 200 + "null" even when /v1 has data.
+        // Continue to the next base candidate before giving up.
+        continue;
       }
 
       // Only log in dev; mapping reads are frequent and this can be noisy.
@@ -132,66 +143,91 @@ async function fetchMappingValue(
   return fetchMappingValueJsonRpc(programId, mappingName, key);
 }
 
+const RPC_RETRY_DELAY_MS = 5000;
+
 /**
  * Fetches the current event counter from the passmeet contract.
  * The event_counter mapping uses key 0u8 and returns the latest event ID (u64).
+ * Retries up to 2 times with 5s delay when null, to handle transient Provable indexing lag.
  */
 export async function getEventCounter(): Promise<number> {
-  const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "event_counter", "0u8");
-  if (!text) {
-    console.log("[PassMeet RPC] getEventCounter: no data, returning 0");
-    return 0;
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, RPC_RETRY_DELAY_MS));
+    const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "event_counter", "0u8");
+    if (text) {
+      const match = text.match(/(\d+)u64/);
+      const count = match ? parseInt(match[1], 10) : 0;
+      if (process.env.NODE_ENV === "development") {
+        console.log("[PassMeet RPC] getEventCounter:", count);
+      }
+      return count;
+    }
+    if (attempt < 2 && process.env.NODE_ENV === "development") {
+      console.log("[PassMeet RPC] getEventCounter: no data, retrying in 5s...");
+    }
   }
-  const match = text.match(/(\d+)u64/);
-  const count = match ? parseInt(match[1], 10) : 0;
-  console.log("[PassMeet RPC] getEventCounter:", count);
-  return count;
+  if (process.env.NODE_ENV === "development") {
+    console.log("[PassMeet RPC] getEventCounter: no data after retries, returning 0");
+  }
+  return 0;
 }
 
 /** Fetch latest block height from Provable explorer REST. Returns null on failure. */
 export async function getLatestBlockHeight(): Promise<number | null> {
-  try {
-    const url = `${ALEO_RPC_URL}/${ALEO_NETWORK}/block/height/latest`;
-    const res = await fetchWithTimeout(url);
-    if (!res.ok) return null;
-
-    const text = await res.text();
+  const bases = provableBaseCandidates(ALEO_RPC_URL);
+  for (const base of bases) {
     try {
-      const data = JSON.parse(text) as unknown;
-      if (typeof data === "number") return data;
-      if (typeof data === "string") {
-        const n = parseInt(data, 10);
-        return Number.isFinite(n) ? n : null;
-      }
-    } catch {
-      // fall through
-    }
+      const baseNoNetwork = stripNetworkSuffix(base);
+      const url = `${baseNoNetwork}/${ALEO_NETWORK}/block/height/latest`;
+      const res = await fetchWithTimeout(url);
+      if (!res.ok) continue;
 
-    const n = parseInt(text.replace(/\D/g, ""), 10);
-    if (Number.isFinite(n)) return n;
-    return null;
-  } catch {
-    return null;
+      const text = await res.text();
+      try {
+        const data = JSON.parse(text) as unknown;
+        if (typeof data === "number") return data;
+        if (typeof data === "string") {
+          const n = parseInt(data, 10);
+          return Number.isFinite(n) ? n : null;
+        }
+      } catch {
+        // fall through
+      }
+
+      const n = parseInt(text.replace(/\D/g, ""), 10);
+      if (Number.isFinite(n)) return n;
+    } catch {
+      continue;
+    }
   }
+  return null;
 }
 
 /**
  * Fetches a single event from the on-chain events mapping.
+ * Retries up to 2 times with 5s delay when null, to handle transient Provable indexing lag.
  */
 export async function getEvent(eventId: number): Promise<OnChainEventInfo | null> {
   const key = `${eventId}u64`;
-  const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "events", key);
-  if (!text) {
-    console.log("[PassMeet RPC] getEvent:", eventId, "-> null");
-    return null;
+  for (let attempt = 0; attempt <= 2; attempt++) {
+    if (attempt > 0) await new Promise((r) => setTimeout(r, RPC_RETRY_DELAY_MS));
+    const text = await fetchMappingValue(PASSMEET_V1_PROGRAM_ID, "events", key);
+    if (text) {
+      try {
+        const parsed = parseEventInfo(text, eventId);
+        if (process.env.NODE_ENV === "development") {
+          console.log("[PassMeet RPC] getEvent:", eventId, "->", parsed ? "ok" : "null");
+        }
+        return parsed;
+      } catch {
+        return null;
+      }
+    }
   }
-  try {
-    const parsed = parseEventInfo(text, eventId);
-    console.log("[PassMeet RPC] getEvent:", eventId, "->", parsed ? "ok" : "null");
-    return parsed;
-  } catch {
-    return null;
+  if (process.env.NODE_ENV === "development") {
+    console.log("[PassMeet RPC] getEvent:", eventId, "-> null (after retries)");
   }
+  return null;
 }
 
 /**

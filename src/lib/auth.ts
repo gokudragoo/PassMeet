@@ -29,13 +29,15 @@ export function getPassMeetAuthSecret(): string {
     throw new Error("Auth secret not configured (PASSMEET_AUTH_SECRET, min 32 chars).");
   }
 
-  // Prevent accidental production deployments with placeholder secrets.
-  if (
-    process.env.NODE_ENV === "production" &&
-    (secret === "please_change_me_to_a_random_32_char_secret" ||
-      secret === "your_random_32_char_secret_here")
-  ) {
-    throw new Error("Auth secret is still a placeholder. Set PASSMEET_AUTH_SECRET to a real random value.");
+  // Reject placeholder secrets in all environments.
+  const placeholders = [
+    "please_change_me_to_a_random_32_char_secret",
+    "your_random_32_char_secret_here",
+  ];
+  if (placeholders.includes(secret)) {
+    throw new Error(
+      "Auth secret is still a placeholder. Run: node scripts/generate_auth_secret.mjs and set PASSMEET_AUTH_SECRET in .env.local"
+    );
   }
   return secret;
 }
