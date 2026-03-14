@@ -69,6 +69,10 @@ for dir in "${CONTRACT_DIRS[@]}"; do
   if [[ -z "${program_name}" ]]; then
     program_name="$(cd "${dir}" && sed -n 's/.*"program"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' program.json | head -n 1)"
   fi
+  if [[ -z "${program_name}" ]] && [[ -f "${dir}/src/main.leo" ]]; then
+    # Fallback: parse `program <id>.aleo {` from Leo source.
+    program_name="$(cd "${dir}" && sed -n 's/^program[[:space:]]\+\([^[:space:]]\+\)[[:space:]]*{.*/\1/p' src/main.leo | head -n 1)"
+  fi
   program_name="$(printf "%s" "${program_name}" | tr -d '\r')"
   if [[ -n "${program_name}" ]]; then
     # If the program already exists on-chain, Leo will fail with a confusing error.
