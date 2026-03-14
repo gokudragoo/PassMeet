@@ -4,7 +4,7 @@
 import credits.aleo;
 import token_registry.aleo;
 
-program passmeet_v2_7788.aleo {
+program passmeet_v3_7788.aleo {
     struct EventInfo {
         id: u64,
         organizer: address,

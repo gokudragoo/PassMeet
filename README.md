@@ -12,12 +12,13 @@ This repo includes:
 
 This release hardens PassMeet for Aleo Testnet end-to-end (contracts + web app):
 
-- Contracts: per-rail on-chain pricing (`price_credits`, `price_usdcx`, `price_usad`), split free mint vs paid purchase, atomic payment + mint/subscribe flows, collision-free nullifiers, and Shield-friendly ZK constraints (no mapping reads in `transition`; reads/writes moved to `finalize`).
+- Contracts: per-rail on-chain pricing (`price_credits`, `price_usdcx`, `price_usad`), split free mint vs paid purchase, atomic payment + mint/subscribe flows, and unpredictable collision-free nullifiers (hash of `(ticket_owner, event_id, ticket_id)`).
 - Payments: first-class support for `credits.aleo` plus Aleo token payments via `token_registry.aleo` (USDCx/USAD when configured).
-- Frontend: explicit transaction lifecycle (`submitted`, `confirmed`, `timed_out`, `failed`, `rejected`) and no "phantom success"; organizer UI sets per-rail prices and attendee UI selects a payment rail.
+- Frontend: explicit transaction lifecycle (`submitted`, `confirmed`, `timed_out`, `failed`, `rejected`) and no "phantom success"; organizer UI sets per-rail prices and attendee UI selects a payment rail. Minting retries are hardened for the `ticket_id` concurrency edge case.
 - Auth + sessions: server-verified wallet signatures with HttpOnly cookie sessions (no localStorage auth fallbacks).
 - Metadata durability: IPFS writes are treated as part of "created"; if IPFS is unavailable, events still show from on-chain data with placeholder metadata.
-- Quality gates: `npm run lint`, `npm run test:run`, `npm run build`.
+- Ops + security: best-effort API rate limiting, safer image host allowlist, removed dev-only loaders, and `npm audit` clean (0 known vulnerabilities).
+- Tooling: WSL-friendly scripts for token registration/minting and auth secret generation.
 
 ## Name, Description, Problem Being Solved
 
@@ -49,8 +50,8 @@ Traditional ticketing systems leak attendee identity and purchase history, rely 
   - Auth: server-verified wallet signature sessions via HttpOnly cookies
   - Events metadata: IPFS persistence and index management (Pinata when configured)
 - Aleo programs
-  - `passmeet_v2_7788.aleo`: events, tickets, payment-atomic purchase, verify-entry nullifiers
-  - `passmeet_subs_v2_7788.aleo`: subscriptions, payment-atomic subscribe, validity by block height
+  - `passmeet_v3_7788.aleo`: events, tickets, payment-atomic purchase, verify-entry nullifiers
+  - `passmeet_subs_v3_7788.aleo`: subscriptions, payment-atomic subscribe, validity by block height
 - Payments
   - `credits.aleo` for private credits transfers
   - `token_registry.aleo` for USDCx/USAD tokens using a single payment primitive
@@ -68,8 +69,8 @@ flowchart LR
   UI --> API["Next.js API Routes"]
   API --> IPFS["Pinata / IPFS (metadata)"]
   W --> RPC["Aleo RPC (Provable)"]
-  RPC --> A1["passmeet_v2_7788.aleo"]
-  RPC --> A2["passmeet_subs_v2_7788.aleo"]
+  RPC --> A1["passmeet_v3_7788.aleo"]
+  RPC --> A2["passmeet_subs_v3_7788.aleo"]
   A1 --> TR["token_registry.aleo"]
   A2 --> TR
 ```
@@ -77,7 +78,7 @@ flowchart LR
 ### Data Flow (Core Paths)
 
 - Create event
-  - UI -> wallet executes `create_event(capacity, price_credits, price_usdcx, price_usad)` on `passmeet_v2_7788.aleo`
+  - UI -> wallet executes `create_event(capacity, price_credits, price_usdcx, price_usad)` on `passmeet_v3_7788.aleo`
   - UI -> `POST /api/events` writes metadata to IPFS (Pinata) and updates the index
   - The UI only claims "created" once on-chain succeeds; metadata failures are surfaced and the event remains discoverable from on-chain data with placeholder metadata
 - Buy ticket / mint ticket (atomic)
@@ -88,7 +89,7 @@ flowchart LR
 - Gate verify
   - Wallet executes `verify_entry(ticket)` which sets a one-time nullifier on-chain
 - Subscribe
-  - `subscribe_with_credits(tier, credits_record)` or `subscribe(tier, token_record)` on `passmeet_subs_v2_7788.aleo`
+  - `subscribe_with_credits(tier, credits_record)` or `subscribe(tier, token_record)` on `passmeet_subs_v3_7788.aleo`
   - Contract stores `start_height` / `end_height` using `block.height` (no browser-time truth)
 
 ## Privacy Model (What Is Private, What Is Public)
@@ -128,7 +129,7 @@ This repo was hardened to remove demo-style fallbacks and improve reliability en
 ### Environment Variables
 Copy `.env.example` to `.env.local` and set values:
 
-- `PASSMEET_AUTH_SECRET` (required, generate a random 32+ char string)
+- `PASSMEET_AUTH_SECRET` (required, generate a random 32+ char string; you can run `node scripts/generate_auth_secret.mjs`)
 - `PINATA_JWT` (optional: enables event metadata persistence on IPFS; without it events still load from on-chain data with placeholder metadata)
 - `NEXT_PUBLIC_ALEO_NETWORK` (`testnet` or `mainnet`)
 - `NEXT_PUBLIC_ALEO_RPC_URL` (recommended: https://api.explorer.provable.com/v2)
@@ -136,8 +137,8 @@ Copy `.env.example` to `.env.local` and set values:
 - `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` (Your deployed subscriptions Leo program)
 - Token rails (optional, but if you enable token pricing in the UI they must be configured on-chain too)
   - `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID` (`token_registry.aleo`)
-  - `NEXT_PUBLIC_USDCX_TOKEN_ID` (field literal, e.g. `123456789field`)
-  - `NEXT_PUBLIC_USAD_TOKEN_ID` (field literal, e.g. `123456789field`)
+  - `NEXT_PUBLIC_USDCX_TOKEN_ID` (field literal, e.g. `7788001field`)
+  - `NEXT_PUBLIC_USAD_TOKEN_ID` (field literal, e.g. `7788002field`)
 
 ### Install and Run
 
@@ -192,6 +193,15 @@ Subscription program:
 ## Repo Map
 
 - `src/`: Next.js app + route handlers
-- `contracts/passmeet_v1_7788/`: event + ticket Aleo program
+- `contracts/passmeet_events_7788/`: event + ticket Aleo program
 - `contracts/passmeet_subs_7788/`: subscription Aleo program
 - `.env.example`: environment template
+
+## Future Work
+
+- Enforce subscription-tier product limits (or update tier copy to only promise what is enforced).
+- Add `update_event` / `cancel_event` (or UI-level cancellation semantics) and organizer metadata edits.
+- Add a durable metadata index (DB) for production, keeping IPFS as the public artifact store.
+- Expand automated tests (walletTx, record parsing, auth routes, and contract integration tests).
+- Add an activity log (tickets purchased, gate verifies, subscription renewals) with privacy-preserving UX.
+- Optional: richer event images (upload to IPFS) and stricter image host allowlists per deployment.

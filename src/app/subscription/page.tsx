@@ -403,6 +403,9 @@ export default function SubscriptionPage() {
         <p className="mt-4 text-lg text-muted-foreground">
           {tierLoading ? "Loading your plan..." : "Unlock the full power of privacy-preserving events on Aleo."}
         </p>
+        <p className="mt-3 text-sm text-zinc-400">
+          Subscriptions are written on-chain (tier + expiry by block height). Feature enforcement beyond paid rails is an active roadmap item.
+        </p>
       </div>
 
       <div className="mb-10 rounded-3xl border border-white/10 bg-white/5 p-6">

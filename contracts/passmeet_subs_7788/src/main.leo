@@ -4,7 +4,7 @@
 import credits.aleo;
 import token_registry.aleo;
 
-program passmeet_subs_v2_7788.aleo {
+program passmeet_subs_v3_7788.aleo {
     struct Subscription {
         subscriber: address,
         tier: u8,
@@ -68,7 +68,7 @@ program passmeet_subs_v2_7788.aleo {
         payment_record: credits.aleo/credits
     ) -> (credits.aleo/credits, credits.aleo/credits, Future) {
         assert(tier == PRO_TIER || tier == ENT_TIER);
-        assert(payment_record.owner == self.caller);
+        assert(payment_record.owner == self.signer);
         assert(price > 0u64);
 
         let expected_price: u64 = 0u64;
@@ -83,7 +83,7 @@ program passmeet_subs_v2_7788.aleo {
         let (to_treasury, change): (credits.aleo/credits, credits.aleo/credits) =
             credits.aleo/transfer_private(payment_record, treasury_address, price);
 
-        return (to_treasury, change, finalize_sub_credits(self.caller, tier, treasury_address, price));
+        return (to_treasury, change, finalize_sub_credits(self.signer, tier, treasury_address, price));
     }
 
     async function finalize_sub_credits(
@@ -130,7 +130,7 @@ program passmeet_subs_v2_7788.aleo {
         payment_record: token_registry.aleo/Token
     ) -> (token_registry.aleo/Token, token_registry.aleo/Token, Future) {
         assert(tier == PRO_TIER || tier == ENT_TIER);
-        assert(payment_record.owner == self.caller);
+        assert(payment_record.owner == self.signer);
         assert(payment_record.token_id == payment_token_id);
         assert(expected_amount > 0u128);
         assert(payment_record.amount >= expected_amount);
@@ -138,7 +138,7 @@ program passmeet_subs_v2_7788.aleo {
         let (change, to_treasury, transfer_future): (token_registry.aleo/Token, token_registry.aleo/Token, Future) =
             token_registry.aleo/transfer_private(treasury_address, expected_amount, payment_record);
 
-        return (change, to_treasury, finalize_subscribe_token(self.caller, tier, treasury_address, expected_amount, payment_token_id, transfer_future));
+        return (change, to_treasury, finalize_subscribe_token(self.signer, tier, treasury_address, expected_amount, payment_token_id, transfer_future));
     }
 
     async function finalize_subscribe_token(

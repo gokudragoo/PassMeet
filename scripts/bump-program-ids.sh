@@ -99,7 +99,8 @@ to_s = sys.argv[3].encode("utf-8")
 path = sys.argv[1]
 data = open(path, "rb").read()
 if from_s not in data:
-    raise SystemExit(f"Error: '{sys.argv[2]}' not found in {path}")
+    # Not all files contain both program IDs (events vs subs). Missing is fine.
+    sys.exit(0)
 open(path, "wb").write(data.replace(from_s, to_s))
 PY
 }
