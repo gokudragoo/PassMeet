@@ -24,7 +24,8 @@ import { fileURLToPath } from "node:url";
 
 // Use dynamic import for the SDK (ESM)
 const argv = process.argv.slice(2);
-const PRIVATE_KEY = argv[0] || process.env.PRIVATE_KEY || process.env.ALEO_PRIVATE_KEY;
+const privateKeyArg = argv.find((a) => typeof a === "string" && a.startsWith("APrivateKey1"));
+const PRIVATE_KEY = privateKeyArg || process.env.PRIVATE_KEY || process.env.ALEO_PRIVATE_KEY;
 const NO_ENV = argv.includes("--no-env") || process.env.NO_ENV === "1";
 const NO_MINT = argv.includes("--no-mint") || process.env.NO_MINT === "1";
 if (!PRIVATE_KEY || !PRIVATE_KEY.startsWith("APrivateKey1")) {
@@ -97,20 +98,35 @@ async function waitForConfirmation(txId, maxWaitSec = 300) {
   return false;
 }
 
-async function checkTokenRegistered(tokenId) {
+function cleanMappingText(raw) {
+  let cleaned = (raw ?? "").trim();
+  if (!cleaned || cleaned === "null") return "";
+  if (cleaned.startsWith('"') && cleaned.endsWith('"')) cleaned = cleaned.slice(1, -1);
+  cleaned = cleaned.replace(/\\n/g, "\n").replace(/\\"/g, '"');
+  return cleaned.trim();
+}
+
+async function fetchRegisteredTokenText(tokenId) {
   try {
     const url = `${API_URL}/${NETWORK}/program/token_registry.aleo/mapping/registered_tokens/${tokenId}`;
     const res = await fetch(url);
     if (res.ok) {
       const text = await res.text();
-      if (text && text.trim() !== "null") {
-        return true;
-      }
+      return cleanMappingText(text);
     }
   } catch {
     // not found
   }
-  return false;
+  return "";
+}
+
+async function checkTokenRegistered(tokenId) {
+  return !!(await fetchRegisteredTokenText(tokenId));
+}
+
+function parseTokenAdmin(registeredTokenText) {
+  const m = (registeredTokenText ?? "").match(/admin:\s*(aleo1[a-z0-9]+)/);
+  return m ? m[1] : null;
 }
 
 function escapeRegExp(s) {
@@ -168,43 +184,98 @@ async function main() {
   console.log("=========================================\n");
 
   // Dynamic import of the SDK
-  let Account, ProgramManager, AleoNetworkClient;
+  let Account, ProgramManager, AleoKeyProvider;
   try {
-    const sdk = await import("@aleohq/sdk");
+    const sdk = await import("@provablehq/sdk/testnet.js");
     Account = sdk.Account;
     ProgramManager = sdk.ProgramManager;
-    AleoNetworkClient = sdk.AleoNetworkClient ?? sdk.NetworkManager;
+    AleoKeyProvider = sdk.AleoKeyProvider;
   } catch (e) {
-    console.error("❌ Failed to import @aleohq/sdk. Make sure it's installed: npm install @aleohq/sdk");
+    console.error("❌ Failed to import @provablehq/sdk/testnet.js. Make sure deps are installed: npm install");
     console.error(e.message);
     process.exit(1);
   }
 
   // Setup account
-  const account = new Account({ privateKey: PRIVATE_KEY });
+  let account;
+  try {
+    account = new Account({ privateKey: PRIVATE_KEY });
+  } catch (e) {
+    console.error("❌ Invalid private key.");
+    process.exit(1);
+  }
   const walletAddress = account.address().to_string();
   console.log(`📎 Wallet: ${walletAddress}`);
   console.log(`🌐 Network: ${NETWORK}`);
-  console.log(`🔗 API: ${API_URL}\n`);
+  console.log(`🔗 API (queries): ${API_URL}/${NETWORK}`);
+  console.log(`🔗 API (tx submit): ${API_URL}\n`);
 
-  // Setup network + program manager
-  const networkClient = new AleoNetworkClient(API_URL);
-  const programManager = new ProgramManager(API_URL, NETWORK, networkClient);
+  // Setup program manager (Provable SDK)
+  const keyProvider = new AleoKeyProvider();
+  keyProvider.useCache(true);
+  const programManager = new ProgramManager(API_URL, keyProvider);
   programManager.setAccount(account);
+
+  function cacheKey(programName, functionName) {
+    return `${programName.replace(/\\.aleo$/, "")}:${functionName}`;
+  }
+
+  async function exec(programName, functionName, inputs) {
+    const txId = await programManager.execute({
+      programName,
+      functionName,
+      priorityFee: 0.0,
+      privateFee: false,
+      inputs,
+      keySearchParams: { cacheKey: cacheKey(programName, functionName) },
+    });
+    if (typeof txId !== "string" || !txId.startsWith("at1")) {
+      throw new Error(`Unexpected tx id: ${String(txId)}`);
+    }
+    return txId;
+  }
 
   // ============================
   // Step 1: Check if tokens already registered
   // ============================
   console.log("📋 Step 1: Checking if tokens are already registered...\n");
 
-  const usdcxExists = await checkTokenRegistered(USDCX_TOKEN_ID);
-  const usadExists = await checkTokenRegistered(USAD_TOKEN_ID);
+  const usdcxText = await fetchRegisteredTokenText(USDCX_TOKEN_ID);
+  const usadText = await fetchRegisteredTokenText(USAD_TOKEN_ID);
+  const usdcxExists = !!usdcxText;
+  const usadExists = !!usadText;
+
+  // If a token ID was already registered by another admin, we cannot mint it.
+  let canMintUsdcx = true;
+  let canMintUsad = true;
 
   if (usdcxExists) {
     console.log(`   ✅ USDCx (${USDCX_TOKEN_ID}) is already registered!`);
+    const admin = parseTokenAdmin(usdcxText);
+    if (admin && admin !== walletAddress) {
+      canMintUsdcx = false;
+      console.log(`   ⚠️  USDCx admin is ${admin}. Minting will be skipped (not your token).`);
+    }
   }
   if (usadExists) {
     console.log(`   ✅ USAD (${USAD_TOKEN_ID}) is already registered!`);
+    const admin = parseTokenAdmin(usadText);
+    if (admin && admin !== walletAddress) {
+      canMintUsad = false;
+      console.log(`   ⚠️  USAD admin is ${admin}. Minting will be skipped (not your token).`);
+    }
+  }
+
+  // If registration happens in this run, refresh mint permissions afterward.
+  async function refreshMintPermissions() {
+    const [newUsdcxText, newUsadText] = await Promise.all([
+      fetchRegisteredTokenText(USDCX_TOKEN_ID),
+      fetchRegisteredTokenText(USAD_TOKEN_ID),
+    ]);
+    const usdcxAdmin = parseTokenAdmin(newUsdcxText);
+    const usadAdmin = parseTokenAdmin(newUsadText);
+    canMintUsdcx = !usdcxAdmin || usdcxAdmin === walletAddress;
+    canMintUsad = !usadAdmin || usadAdmin === walletAddress;
   }
 
   // ============================
@@ -224,16 +295,11 @@ async function main() {
       ];
       console.log("   Inputs:", inputs);
 
-      const txId = await programManager.execute({
-        programName: "token_registry.aleo",
-        functionName: "register_token",
-        fee: FEE,
-        inputs: inputs,
-        privateFee: true,
-      });
+      const txId = await exec("token_registry.aleo", "register_token", inputs);
 
       console.log(`   📤 Submitted! TxID: ${txId}`);
       await waitForConfirmation(txId);
+      await refreshMintPermissions();
     } catch (e) {
       console.error(`   ❌ Failed to register USDCx:`, e.message);
       if (e.message?.includes("already")) {
@@ -261,16 +327,11 @@ async function main() {
       ];
       console.log("   Inputs:", inputs);
 
-      const txId = await programManager.execute({
-        programName: "token_registry.aleo",
-        functionName: "register_token",
-        fee: FEE,
-        inputs: inputs,
-        privateFee: true,
-      });
+      const txId = await exec("token_registry.aleo", "register_token", inputs);
 
       console.log(`   📤 Submitted! TxID: ${txId}`);
       await waitForConfirmation(txId);
+      await refreshMintPermissions();
     } catch (e) {
       console.error(`   ❌ Failed to register USAD:`, e.message);
       if (e.message?.includes("already")) {
@@ -284,7 +345,7 @@ async function main() {
   // ============================
   // Step 4: Mint USDCx to self
   // ============================
-  if (!NO_MINT) {
+  if (!NO_MINT && canMintUsdcx) {
     console.log(`\n💰 Step 3a: Minting ${MINT_AMOUNT} USDCx to your wallet...`);
     try {
       const inputs = [
@@ -294,13 +355,7 @@ async function main() {
       ];
       console.log("   Inputs:", inputs);
 
-      const txId = await programManager.execute({
-        programName: "token_registry.aleo",
-        functionName: "mint_private",
-        fee: FEE,
-        inputs: inputs,
-        privateFee: true,
-      });
+      const txId = await exec("token_registry.aleo", "mint_private", inputs);
 
       console.log(`   📤 Submitted! TxID: ${txId}`);
       await waitForConfirmation(txId);
@@ -309,14 +364,16 @@ async function main() {
       console.error("   This might happen if the token isn't registered yet (tx still confirming).");
       console.error("   Wait a few minutes and re-run the script.");
     }
-  } else {
+  } else if (NO_MINT) {
     console.log("\n⏭️  Step 3a: Skipping USDCx mint (--no-mint).");
+  } else {
+    console.log("\n⏭️  Step 3a: Skipping USDCx mint (token is registered but not controlled by this wallet).");
   }
 
   // ============================
   // Step 5: Mint USAD to self
   // ============================
-  if (!NO_MINT) {
+  if (!NO_MINT && canMintUsad) {
     console.log(`\n💰 Step 3b: Minting ${MINT_AMOUNT} USAD to your wallet...`);
     try {
       const inputs = [
@@ -326,13 +383,7 @@ async function main() {
       ];
       console.log("   Inputs:", inputs);
 
-      const txId = await programManager.execute({
-        programName: "token_registry.aleo",
-        functionName: "mint_private",
-        fee: FEE,
-        inputs: inputs,
-        privateFee: true,
-      });
+      const txId = await exec("token_registry.aleo", "mint_private", inputs);
 
       console.log(`   📤 Submitted! TxID: ${txId}`);
       await waitForConfirmation(txId);
@@ -341,8 +392,10 @@ async function main() {
       console.error("   This might happen if the token isn't registered yet (tx still confirming).");
       console.error("   Wait a few minutes and re-run the script.");
     }
-  } else {
+  } else if (NO_MINT) {
     console.log("\n⏭️  Step 3b: Skipping USAD mint (--no-mint).");
+  } else {
+    console.log("\n⏭️  Step 3b: Skipping USAD mint (token is registered but not controlled by this wallet).");
   }
 
   // ============================
