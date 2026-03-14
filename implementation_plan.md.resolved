@@ -1,349 +1,142 @@
-# PassMeet Complete Audit Report & Improvement Plan
+# PassMeet Testnet Production Hardening (Resolved)
+
+Date: 2026-03-14
+
+This document captures what was actually implemented in this repo to make PassMeet reliable and "production-ready for testnet", and what remains as future work. It is written to be actionable for deploying on Aleo Testnet with Shield/Leo/Puzzle/Fox wallets.
+
+## What Was Implemented
+
+### Contracts (Aleo Programs)
+
+Events/Tickets program:
+
+- Per-rail on-chain pricing:
+  - `price_credits`, `price_usdcx`, `price_usad` are stored as `u128` micro-units.
+  - `0` disables a rail.
+- Minting is split into:
+  - `mint_free_ticket(event_id, ticket_id)` for free events.
+  - `purchase_ticket(...)` and `purchase_ticket_with_credits(...)` for paid events.
+- Paid ticket purchases are atomic: payment transfer and ticket mint happen in one on-chain flow.
+- Nullifier generation for gate verification is collision-safe and privacy-preserving by hashing:
+  - `(ticket_owner, event_id, ticket_id)` to a `field`
+- Input validation was added for:
+  - zero capacity
+  - unsupported rails
+  - price mismatches
+  - stale `ticket_id` / sold-out cases (fail without charging and without minting)
+
+Subscriptions program:
+
+- Tier pricing per rail and atomic paid subscribe flow:
+  - `subscribe_with_credits(...)` for `credits.aleo`
+  - `subscribe(...)` for token rails via `token_registry.aleo`
+- Subscription validity is based on chain block height (not browser time).
+
+Important: both programs are `@noupgrade`. Any contract change requires deploying under new, unique program IDs.
+
+### Payments (Hackathon Compliance)
+
+- Payments are rebuilt around `token_registry.aleo` so `credits.aleo`, USDCx, and USAD can be treated as first-class rails.
+- The repo now uses real, on-chain-registered test token IDs (no placeholders):
+  - `NEXT_PUBLIC_USDCX_TOKEN_ID=7788001field`
+  - `NEXT_PUBLIC_USAD_TOKEN_ID=7788002field`
+
+### Frontend Reliability
+
+- Explicit transaction states are used end-to-end:
+  - `submitted`, `confirmed`, `timed_out`, `failed`, `rejected`
+- The UI no longer treats "no tx hash" as success.
+- `ticket_id` concurrency is hardened:
+  - the client re-reads `ticket_count` and retries only when the failure indicates a stale `ticket_id`.
+- Shield wallet is supported without requiring "Onchain history" permission:
+  - tx-history reads (`requestTransactionHistory`) are skipped for Shield, and confirmations rely on `transactionStatus`.
+- Wallet record usage is hardened:
+  - gate verification prefers wallet-native record formats; fallback plaintext formatting is minimal and avoids non-standard fields.
+
+### Auth, Sessions, and API Hardening
+
+- Wallet-auth sessions are server-verified:
+  - `/api/auth/nonce` issues a nonce
+  - `/api/auth/verify` verifies signature and sets an HttpOnly cookie session
+  - `/api/auth/session` is the source of truth for auth state
+  - `/api/auth/logout` clears the cookie
+- Signatures are handled robustly:
+  - client signs bytes for wallet compatibility
+  - server accepts multiple signature encodings and rejects invalid signatures
+- Best-effort per-IP rate limiting was added for auth routes.
+
+### Metadata Persistence (IPFS / Pinata)
+
+- Event creation is only shown as "published" after both:
+  - the on-chain transaction confirms, and
+  - the metadata write succeeds.
+- If IPFS is unavailable or misconfigured:
+  - events still remain visible from on-chain state with placeholder metadata
+  - the UI shows a clear warning instead of silently hiding events.
+- IPFS index updates are safe:
+  - upload new index first, only then retire the old one
+  - no destructive unpin-before-success behavior.
+
+### Quality Gates
+
+- CI wiring is in place to gate:
+  - `lint`
+  - `test:run`
+  - `build`
+
+Note: In some restricted Windows sandbox environments, `next build` / test runners can fail due to process-spawn restrictions. Use WSL or CI (Linux) for the authoritative build/test pass.
+
+## Deploy (Testnet) Checklist
+
+1. Set required env:
+   - `NEXT_PUBLIC_ALEO_NETWORK=testnet`
+   - `NEXT_PUBLIC_ALEO_RPC_URL=https://api.explorer.provable.com/v2`
+   - `PASSMEET_AUTH_SECRET` (32+ chars)
+2. Generate a real auth secret locally (writes to `.env.local`):
+   - `node scripts/generate_auth_secret.mjs`
+3. Register and mint USDCx/USAD one-time (requires testnet credits for fees):
+   - `bash scripts/register_and_mint_tokens.sh`
+   - `bash scripts/check_tokens.sh`
+4. Deploy contracts (WSL + Leo):
+   - `export NETWORK=testnet`
+   - `export ENDPOINT=https://api.explorer.provable.com/v1`
+   - If you already deployed the current program IDs, bump to a unique version:
+     - `bash scripts/bump-program-ids.sh`
+   - Deploy:
+     - `bash scripts/deploy-leo.sh`
+5. Update your deployment env (Vercel, etc):
+   - `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID=...` (the program you deployed)
+   - `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID=...` (the program you deployed)
+   - `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID=token_registry.aleo`
+   - `NEXT_PUBLIC_USDCX_TOKEN_ID=7788001field`
+   - `NEXT_PUBLIC_USAD_TOKEN_ID=7788002field`
+6. One-time on-chain configuration (admin actions):
+   - Organizer page: `configure_tokens(usdcx, usad)`
+   - Subscription page: `configure(treasury, usdcx, usad)`
+
+## Troubleshooting
+
+If you see `Program not allowed`:
+
+- Disconnect your wallet, reconnect, and approve program access for:
+  - the current events program ID
+  - the current subs program ID
+  - `credits.aleo`
+  - `token_registry.aleo`
+
+If Shield shows "permission denied, Onchain history permission required":
+
+- You should no longer need to grant that permission for PassMeet. Update to the latest code and reload.
+
+If deployments fail with "Program ID is already deployed":
+
+- Run `bash scripts/bump-program-ids.sh` and deploy again. Aleo program IDs are unique and `@noupgrade` programs cannot be redeployed.
+
+## Remaining Future Work (Non-Blocking)
+
+- Subscription tier enforcement (either implement real product limits or adjust tier copy to match what is enforced).
+- Event updates/cancellation transitions on-chain.
+- Durable metadata index (database) for production deployments.
+- Expanded automated tests (walletTx, record parsing, auth routes, and integration tests).
+- Optional: user-uploaded event images stored on IPFS (replace default Unsplash-only images).
 
-## Executive Summary
-
-After reading **every file** in the codebase (2 Aleo contracts, 5 pages, 9 lib files, 5 API routes, all components, configs, and scripts), this report covers bugs, production-readiness issues, and a prioritized improvement plan. The app has a solid architectural foundation but has **several critical gaps** preventing production use and compliance with Aleo hackathon rules.
-
-> [!NOTE]
-> **Status update (March 14, 2026):** A production hardening pass has been implemented and verified (`npm run lint`, `npm run test:run`, `npm run build` are green). The remaining "must do" items are now mostly configuration for a real deployment (set `PASSMEET_AUTH_SECRET`, optionally set `PINATA_JWT`) and any extra roadmap features you want beyond the core paid ticketing + gate verification flows.
-
----
-
-## 🔴 CRITICAL Issues (Must Fix)
-
-### C1. Placeholder Token IDs — Payments Are Broken
-
-**Files:** [.env](file:///c:/Users/BMSIT/PassMeet/.env), [.env.local](file:///c:/Users/BMSIT/PassMeet/.env.local)
-
-```
-NEXT_PUBLIC_USDCX_TOKEN_ID=7788001field
-NEXT_PUBLIC_USAD_TOKEN_ID=7788002field
-NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID=token_registry.aleo
-```
-
-Both USDCx and USAD token IDs are fake placeholder values (`123456789field`). **No real payment with stablecoins can occur.** The hackathon rules explicitly require:
-> *"If your project is making any use of payments, you must integrate and utilize the types and methods in either the native credits.aleo, or the USDCx or USAD stablecoin programs."*
-
-**Status:** ✅ Fixed in-repo.
-
-**What we did:**
-- Implemented a reliable registration + mint flow via `token_registry.aleo` using the Provable SDK and WSL-friendly wrappers:
-  - `scripts/register_and_mint_tokens.mjs` (register + mint + env updates)
-  - `scripts/register_and_mint_tokens.sh` / `scripts/check_tokens.sh` (WSL wrappers that use `node` or `node.exe`)
-- Updated `.env.example` to use real token IDs.
-
-**How to verify:**
-- Run `bash scripts/check_tokens.sh` and confirm both tokens are `REGISTERED` and `supply` is > 0 after minting.
-
----
-
-### C2. Auth Secret is a Placeholder — Security Vulnerability
-
-**Files:** [.env](file:///c:/Users/BMSIT/PassMeet/.env#L13), [.env.local](file:///c:/Users/BMSIT/PassMeet/.env.local#L11)
-
-```
-PASSMEET_AUTH_SECRET=your_random_32_char_secret_here
-```
-
-The auth secret must be a real random value (32+ chars) so signed session cookies cannot be forged.
-
-**Status:** ✅ Guardrails implemented; requires deploy-time configuration.
-
-**What we did:**
-- Enforced secret requirements in [`src/lib/auth.ts`](file:///c:/Users/BMSIT/PassMeet/src/lib/auth.ts):
-  - throws if missing or too short
-  - blocks known placeholder secrets in `NODE_ENV=production`
-- Added `scripts/generate_auth_secret.mjs` to generate a strong secret and write it to `.env.local` (which is gitignored).
-
-**How to fix for Vercel/Testnet deploy:**
-- Run: `node scripts/generate_auth_secret.mjs`
-- Copy the value into Vercel env as `PASSMEET_AUTH_SECRET`.
-
----
-
-### C3. Shield Wallet Mint Not Working (The Reported Bug)
-
-**Root Cause Analysis:** The `buyTicket` flow in [PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx#L651-L826) has a race condition and record format issue with Shield wallet:
-
-1. **`ticket_id` race condition (Lines 670):** The code reads `onChainEvent.ticket_count` and computes `nextTicketId = ticket_count + 1`. If two users try to mint at the same time, both will compute the same `nextTicketId`, and the contract's `finalize_mint_free_ticket` will reject one because `ticket_id == (event.ticket_count as u64) + 1u64` (Line 120 of main.leo). Shield Wallet is faster, so it could hit this more often.
-
-2. **Retry loop edge case (Lines 763-768):** The code retries `executeTransaction` up to 3 times if no `transactionId` is returned. Shield typically returns faster, so if the first call returns `undefined` (temporary state), the retry could send a duplicate transaction.
-
-3. **Record format mismatch in `verifyEntry` (Lines 929-966):** The code manually constructs an Aleo plaintext record format from JSON, but Shield Wallet may expect a different record format (ciphertext vs plaintext). The fallback record construction at Line 965 includes a `version` field that may not exist in the contract's Ticket record.
-
-**Status:** ✅ Fixed in-repo.
-
-**What we did (Shield/Leo reliability hardening):**
-- `buyTicket` now re-reads the on-chain `ticket_count` before computing `nextTicketId` and will retry if the transaction definitively **failed on-chain** and the counter advanced (stale `ticket_id` under concurrency).
-- `verifyEntry` no longer injects a non-standard `version` field into fallback record formatting. It prefers wallet-native record formats and builds a minimal plaintext record only as a last resort.
-- If a wallet returns no `transactionId`, we attempt recovery via `requestTransactionHistory` before retrying, reducing accidental double-submissions.
-
-**Files:** `src/context/PassMeetContext.tsx`
-
----
-
-### C4. Contracts Not Deployed as `v2` — Name Mismatch
-
-**Files:** `contracts/passmeet_events_7788/*`, `contracts/passmeet_subs_7788/*`, `scripts/deploy-leo.sh`
-
-**Status:** ✅ Fixed in-repo.
-
-**What we did:**
-- Renamed the confusing `contracts/passmeet_v1_7788` folder to `contracts/passmeet_events_7788` to remove the v1/v2 mismatch.
-- Added/kept deploy safety checks and a bump script so redeploys are always done under a unique program ID (programs are `@noupgrade`).
-- Bumped program IDs to the next version for the current release:
-  - `passmeet_v4_7788.aleo`
-  - `passmeet_subs_v4_7788.aleo`
-
----
-
-### C5. `configure_tokens` Not Idempotent — Admin Bootstrapping Issue
-
-**File:** [main.leo](file:///c:/Users/BMSIT/PassMeet/contracts/passmeet_events_7788/src/main.leo)
-
-```leo
-let current_admin: address = Mapping::get_or_use(admin, 0u8, caller);
-assert(current_admin == caller);
-Mapping::set(admin, 0u8, caller);
-```
-
-The first call sets `admin = caller` (because `get_or_use` returns `caller` when no admin exists). But subsequent calls from a **different** user will also pass because `get_or_use` returns the stored admin, which must match `caller`. This is actually correct for admin locking. However:
-
-- There's no constructor that sets admin explicitly
-- Anyone can become admin if they call `configure_tokens` first
-- There's no way to transfer admin
-
-**Status:** ✅ Documented and supported by admin UI / scripts.
-
-**Notes:**
-- The first caller of `configure_tokens` (and `configure` in the subs program) becomes the admin. This is acceptable on testnet as long as the deployer runs configuration immediately after deployment.
-- Future hardening: add explicit admin initialization in the constructor and an admin-transfer transition (requires redeploy under a new program ID).
-
----
-
-### C6. PINATA_JWT Not Set — Event Metadata Not Persisted
-
-**Files:** [.env](file:///c:/Users/BMSIT/PassMeet/.env#L16), [pinata.ts](file:///c:/Users/BMSIT/PassMeet/src/lib/pinata.ts)
-
-```
-PINATA_JWT=
-```
-
-PINATA_JWT is empty. This means:
-- [saveEventMetadata](file:///c:/Users/BMSIT/PassMeet/src/lib/pinata.ts#139-172) returns `null`
-- Events appear with placeholder names like "Event #1" instead of real names
-- Only `localStorage` saves metadata (lost on different devices)
-
-**Status:** ✅ Handled gracefully; optional but recommended.
-
-**What we did:**
-- The app no longer pretends metadata was persisted when IPFS storage is unavailable. Event creation only shows "published" when both the on-chain event and the metadata write succeed.
-- If IPFS is unavailable, events still load and remain discoverable from on-chain state with placeholder metadata.
-
-**Recommended for real deployments:**
-- Set `PINATA_JWT` (and `NEXT_PUBLIC_GATEWAY_URL`) in Vercel to persist metadata for all users/devices.
-
----
-
-## 🟡 MAJOR Issues
-
-### M1. Subscription Features Are Purely UI — Not Enforced On-Chain
-
-**File:** [subscription/page.tsx](file:///c:/Users/BMSIT/PassMeet/src/app/subscription/page.tsx#L211-L256)
-
-The subscription tiers promise features like "Store up to 5 tickets", "Unlimited Event Creation", "Bulk Ticket Minting", "Custom Entry Rules" — but **none of these are enforced**. The contract just stores `tier` and `end_height`. Any user can create unlimited events or tickets regardless of subscription.
-
-**Fix:** Either enforce limits on-chain (not practical) or enforce them in the frontend + API layer, or change the subscription UI to reflect what it actually does (priority access, no limits).
-
----
-
-### M2. `verify_entry` Nullifier Can Be Predicted
-
-**File:** `contracts/passmeet_events_7788/src/main.leo`
-
-```leo
-let key: TicketNullifierKey = TicketNullifierKey {
-  ticket_owner: ticket.owner,
-  event_id: ticket.event_id,
-  ticket_id: ticket.ticket_id
-};
-let nullifier: field = BHP256::hash_to_field(key);
-```
-
-**Status:** ✅ Fixed in-repo.
-
-The nullifier now commits to the private `ticket.owner` as well as `(event_id, ticket_id)`. Third parties can no longer precompute nullifiers and query `used_tickets` to learn entry status.
-
----
-
-### M3. No Rate Limiting on Auth Endpoints
-
-**Files:** [nonce/route.ts](file:///c:/Users/BMSIT/PassMeet/src/app/api/auth/nonce/route.ts), [verify/route.ts](file:///c:/Users/BMSIT/PassMeet/src/app/api/auth/verify/route.ts)
-
-**Status:** ✅ Fixed in-repo.
-
-Best-effort per-IP rate limiting has been added to both endpoints:
-- `POST /api/auth/nonce`: 10/min per IP
-- `POST /api/auth/verify`: 20/min per IP
-
-**Files:** `src/lib/rateLimit.ts`, `src/app/api/auth/nonce/route.ts`, `src/app/api/auth/verify/route.ts`
-
----
-
-### M4. Event Metadata Stored in localStorage Only (Without Pinata)
-
-Without Pinata, event metadata (name, date, location) is only stored in the browser's `localStorage`. Other users won't see event names/dates — just "Event #1". This makes the app unusable for multi-user scenarios.
-
----
-
-### M5. `purchase_ticket` Return Order May Be Wrong
-
-**File:** `contracts/passmeet_events_7788/src/main.leo`
-
-```leo
-let (change, to_organizer, transfer_future): (token_registry.aleo/Token, token_registry.aleo/Token, Future) =
-    token_registry.aleo/transfer_private(organizer, expected_amount, payment_record);
-
-return (ticket, change, to_organizer, finalize_buy_token(...));
-```
-
-**Status:** ✅ Verified correct.
-
-`token_registry.aleo/transfer_private` returns `(change, to_recipient, future)`, so using `(change, to_organizer, transfer_future)` is correct (organizer is the recipient).
-
----
-
-### M6. Events Cache in Server Memory — Lost on Redeploy
-
-**File:** [events/route.ts](file:///c:/Users/BMSIT/PassMeet/src/app/api/events/route.ts#L10-L11)
-
-```typescript
-let eventsCache: { events: EventMetadata[]; ts: number } | null = null;
-```
-
-This in-memory cache is lost on every Vercel deployment or cold start. This is expected for a cache, but combined with missing Pinata, events will temporarily show as empty.
-
----
-
-### M7. No Event Deletion / Update Mechanism
-
-Once an event is created on-chain, it cannot be modified or cancelled. No `cancel_event` or `update_event` transition exists.
-
----
-
-### M8. `images.remotePatterns` Allows ANY Domain
-
-**File:** `next.config.ts`
-
-**Status:** ✅ Fixed in-repo.
-
-`images.remotePatterns` is now restricted to known hosts (Unsplash + IPFS gateways). The list also includes the hostname from `NEXT_PUBLIC_GATEWAY_URL` if configured.
-
----
-
-## 🟢 IMPROVEMENTS Needed
-
-### I1. Complete USDCx/USAD Token Registration
-Register test tokens via `token_registry.aleo` on testnet, update [.env](file:///c:/Users/BMSIT/PassMeet/.env) with real token IDs, and test end-to-end payment flows with Shield wallet.
-
-### I2. Remove Dummy Data / Hardcoded Images
-- Default event image is hardcoded to an Unsplash URL
-- Subscription page uses hardcoded Unsplash image
-- Allow event creators to upload custom images
-
-### I3. Add Error Boundaries for Each Page
-Only the root [error.tsx](file:///c:/Users/BMSIT/PassMeet/src/app/error.tsx) exists. Add per-route error boundaries.
-
-### I4. Add Loading States for Individual Actions
-The `isLoading` state is shared across all data loading. Separate loading states for events vs tickets vs subscriptions.
-
-### I5. Implement `check_subscription` Query in Gate/Organizer
-The subscription contract stores subscription data, but the organizer page doesn't check if the user has a valid subscription before showing premium features.
-
-### I6. Add Proper Test Coverage
-Only 1 test file exists ([aleo.test.ts](file:///c:/Users/BMSIT/PassMeet/src/lib/aleo.test.ts)) with 5 basic utility tests. Need tests for:
-- [aleoRecords.ts](file:///c:/Users/BMSIT/PassMeet/src/lib/aleoRecords.ts) parsing functions
-- [walletTx.ts](file:///c:/Users/BMSIT/PassMeet/src/lib/walletTx.ts) polling logic
-- Auth flow (nonce → verify → session)
-- Context provider behavior
-
-### I7. Remove `orchids-visual-edits` Dependency
-**Status:** ✅ Fixed in-repo.
-
-Removed `orchids-visual-edits` from `package.json` and removed its loader integration from `next.config.ts`.
-
-### I8. Build Contract Artifacts and Include ABI
-The `build/` directories under contracts should contain compiled artifacts. Verify they're up to date.
-
-### I9. Add Transaction History / Activity Log
-No way for users to see past transactions or event participation history beyond the current session.
-
-### I10. Mobile Responsiveness Issues
-While the app has [use-mobile.ts](file:///c:/Users/BMSIT/PassMeet/src/hooks/use-mobile.ts) hook, it's only 584 bytes and only detects mobile. Review all pages for mobile layout issues.
-
-### I11. Proper DecryptPermission for Shield
-**Status:** ✅ Fixed in-repo.
-
-`AleoWalletProvider` now uses `DecryptPermission.AutoDecrypt` to reduce "not_granted" record access issues on Shield while remaining compatible with Leo/Puzzle/Fox.
-
----
-
-## Proposed Changes (Priority Order)
-
-### Phase 1: Critical Fixes (Make It Work)
-
-#### [MODIFY] [.env.local](file:///c:/Users/BMSIT/PassMeet/.env.local)
-- Generate real `PASSMEET_AUTH_SECRET`
-- Set real USDCx/USAD token IDs after token registration
-
-#### [MODIFY] [PassMeetContext.tsx](file:///c:/Users/BMSIT/PassMeet/src/context/PassMeetContext.tsx)
-- Fix `buyTicket` to re-read `ticket_count` before computing `nextTicketId`
-- Remove `version` field from manual record construction in `verifyEntry`
-- Add better Shield wallet error handling
-
-#### [MODIFY] [main.leo](file:///c:/Users/BMSIT/PassMeet/contracts/passmeet_events_7788/src/main.leo)
-- Fix nullifier computation to include `owner` for privacy
-- Verify `token_registry.aleo/transfer_private` return order
-
-### Phase 2: Compliance Fixes (Meet Rules)
-
-- Register real test tokens on testnet
-- Test full payment flow with credits, USDCx, and USAD through Shield wallet
-- Set up Pinata for IPFS metadata persistence
-- Configure contracts on-chain (`configure_tokens`, `configure`)
-
-### Phase 3: Quality Improvements
-
-- Rename contract directories to match program names
-- Add more tests
-- Remove `orchids-visual-edits`
-- Restrict `images.remotePatterns`
-- Subscription feature enforcement or honest UI
-
----
-
-## Verification Plan
-
-### Automated Tests
-- Run existing tests: `npm run test:run`
-- After fixes, add tests for [aleoRecords.ts](file:///c:/Users/BMSIT/PassMeet/src/lib/aleoRecords.ts) record parsing
-- After fixes, add Shield wallet mock tests for `buyTicket` flow
-
-### Manual Verification (Requires Shield Wallet Extension)
-1. **Token Registration:** Register a test token via `token_registry.aleo`, verify token ID appears on-chain
-2. **Shield Mint Flow:** Connect Shield wallet → Auth → Create event (free) → Mint ticket → Verify the entire flow completes without errors
-3. **Paid Mint:** Create event with credits price → Buy ticket with credits → Verify payment reaches organizer
-4. **Gate Verification:** Mint ticket → Go to Gate page → Verify entry → Confirm nullifier on-chain
-5. **Subscription:** Subscribe with credits → Verify subscription mapping on-chain
-
----
-
-## Summary Table
-
-| Category | Count | Status |
-|----------|-------|--------|
-| 🔴 Critical (code) | 0 | Fixed in-repo (payments/auth/mint reliability/nullifiers) |
-| 🔴 Critical (deployment config) | 1 | Must set a real `PASSMEET_AUTH_SECRET` for production deployments |
-| 🟡 Major | 3+ | Subscription feature enforcement + event update/cancel + stronger persistence/rate limiting are still roadmap |
-| 🟢 Improvements | Ongoing | More tests, better mobile polish, richer metadata/images, activity log |
-| **Overall** |  | Core flows are testnet-ready; remaining items are mostly product/ops hardening |

@@ -115,7 +115,7 @@ export default function AdminTokensPage() {
 
       if (txId) {
         updateStep(stepKey, "success",
-          `✅ Transaction submitted!\nID: ${txId.slice(0, 40)}...\n\nWait 1-3 min, then click "Check Status" to verify on-chain.`
+          `Transaction submitted.\nID: ${txId.slice(0, 40)}...\n\nWait 1-3 min, then click "Check Status" to verify on-chain.`
         );
         toast.success(`${label} submitted! Wait for on-chain confirmation.`);
         return true;
@@ -128,15 +128,15 @@ export default function AdminTokensPage() {
     } catch (e) {
       const msg = e instanceof Error ? e.message : String(e);
       console.error(`[TokenAdmin] Error:`, e);
-      // If "not found" — Shield sent it but polling failed, treat as success
+      // If "not found" - Shield sent it but polling failed, treat as success
       if (msg.includes("not found") || msg.includes("Transaction not found")) {
         updateStep(stepKey, "success",
-          `⏳ Transaction sent! The "not found" message is normal for Shield.\n\nWait 1-3 min, then click "Check Status" to verify.`
+          `Transaction sent. The "not found" message is normal for Shield.\n\nWait 1-3 min, then click "Check Status" to verify.`
         );
         toast.info(`${label} sent! Wait for confirmation.`);
         return true;
       }
-      updateStep(stepKey, "error", `❌ ${msg}`);
+      updateStep(stepKey, "error", `Error: ${msg}`);
       toast.error(msg);
       return false;
     }
@@ -202,9 +202,9 @@ export default function AdminTokensPage() {
     updateStep(stepKey, "loading", `Checking ${label} on-chain...`);
     const exists = await checkTokenRegistered(tokenId);
     if (exists) {
-      updateStep(stepKey, "success", `✅ ${label} (${tokenId}) is registered on-chain!`);
+      updateStep(stepKey, "success", `${label} (${tokenId}) is registered on-chain.`);
     } else {
-      updateStep(stepKey, "error", `❌ ${label} (${tokenId}) is NOT registered yet.`);
+      updateStep(stepKey, "error", `${label} (${tokenId}) is not registered yet.`);
     }
   }
 
@@ -288,7 +288,7 @@ export default function AdminTokensPage() {
 
   return (
     <div className="container mx-auto px-4 py-12 max-w-2xl">
-      <h1 className="text-3xl font-bold text-white mb-2">🔧 Token Admin</h1>
+      <h1 className="text-3xl font-bold text-white mb-2">Token Admin</h1>
       <p className="text-zinc-400 mb-8">Register USDCx & USAD tokens, mint test tokens, and configure contracts.</p>
 
       {!address ? (
@@ -350,7 +350,7 @@ export default function AdminTokensPage() {
 
           <Card className="border-primary/30 bg-primary/5">
             <CardContent className="py-6">
-              <p className="text-sm font-bold text-white mb-2">📋 After all steps, update your .env:</p>
+              <p className="text-sm font-bold text-white mb-2">After all steps, update your .env:</p>
               <div className="bg-black/40 rounded-lg p-3 font-mono text-xs text-primary">
                 NEXT_PUBLIC_USDCX_TOKEN_ID={USDCX_TOKEN_ID}<br />
                 NEXT_PUBLIC_USAD_TOKEN_ID={USAD_TOKEN_ID}

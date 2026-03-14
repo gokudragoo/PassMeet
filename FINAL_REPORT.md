@@ -25,6 +25,7 @@ This report summarizes what was implemented to harden PassMeet for an Aleo Testn
 
 - Auth sessions are server-verified wallet signatures using HttpOnly cookies.
 - Added best-effort per-IP rate limiting for auth routes (`nonce` and `verify`).
+- Shield wallet no longer requires the extra "Onchain history" permission; tx-history reads are skipped and confirmations rely on `transactionStatus`.
 - Removed dev-only build tooling and restricted Next.js image host allowlist.
 - `npm audit` is clean (0 known vulnerabilities), including overrides to lift nested `zod` versions in Puzzle dependencies.
 - Removed legacy scripts that contained hardcoded private keys and placeholder token IDs.
@@ -75,4 +76,3 @@ Green checks in this workspace:
 - No on-chain event update/cancel transitions yet.
 - Event metadata durability is best with IPFS configured; production deployments should add a durable index/database.
 - Broader wallet-matrix testing (Shield/Leo/Puzzle/Fox) should be repeated after every contract bump.
-

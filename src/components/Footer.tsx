@@ -22,7 +22,7 @@ export function Footer() {
             <a href={EXPLORER_BASE} target="_blank" rel="noopener noreferrer" className="hover:text-primary transition-colors">View on Explorer</a>
           </div>
           <p className="text-xs text-muted-foreground">
-            © 2026 PassMeet. Built for Aleo Wavehack.
+            (c) 2026 PassMeet. Built for Aleo Wavehack.
           </p>
         </div>
       </div>

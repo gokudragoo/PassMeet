@@ -108,7 +108,7 @@ function mapWalletError(error: unknown): string {
     return "Insufficient balance. You need Aleo credits for fees (~0.025). Get testnet tokens from a faucet.";
   }
   if (msg.includes("authorization") || msg.includes("utxo")) {
-    return "Your wallet needs at least 2 separate records (UTXOs) with Aleo credits—one for the transaction and one for the fee (~0.025). Try splitting your balance or getting more testnet tokens.";
+    return "Your wallet needs at least 2 separate records (UTXOs) with Aleo credits: one for the transaction and one for the fee (~0.025). Try splitting your balance or getting more testnet tokens.";
   }
   if (msg.includes("not_granted") || msg.includes("not granted")) {
     return "Record access was denied. Disconnect your wallet and reconnect, then approve record access for this app.";
@@ -210,7 +210,15 @@ function saveTicketsToLocalStorage(address: string, tickets: Ticket[]) {
 
 export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const { address, signMessage, executeTransaction, transactionStatus, requestRecords, requestTransactionHistory, wallet } = useWallet();
-  const walletName = (wallet as { adapter?: { name?: string }; name?: string })?.adapter?.name ?? (wallet as { name?: string })?.name ?? "";
+  const walletName = String(
+    (wallet as { adapter?: { name?: unknown }; name?: unknown } | null)?.adapter?.name ??
+      (wallet as { name?: unknown } | null)?.name ??
+      ""
+  );
+  // Shield emits a permission error event when reading tx history unless the user grants
+  // an extra "Onchain history" permission. We don't need tx history for correctness, so
+  // skip tx-history reads for Shield (and for unknown wallets).
+  const allowTxHistory = walletName.length > 0 && !/shield/i.test(walletName);
   const [events, setEvents] = useState<Event[]>([]);
   const [myTickets, setMyTickets] = useState<Ticket[]>([]);
   const [isDataLoading, setIsDataLoading] = useState(false);
@@ -571,7 +579,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const creditsMicro = Math.floor(priceCredits * 1_000_000);
       const usdcxMicro = Math.floor(priceUsdcx * 1_000_000);
       const usadMicro = Math.floor(priceUsad * 1_000_000);
-      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
+      const historyBefore = await snapshotTxHistory(
+        allowTxHistory ? requestTransactionHistory : undefined,
+        PASSMEET_V1_PROGRAM_ID
+      );
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "create_event",
@@ -584,7 +595,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       if (tempId) {
         const { state, txHash } = await pollForTxHash(tempId, transactionStatus, {
           program: PASSMEET_V1_PROGRAM_ID,
-          requestTransactionHistory,
+          requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
           historyBefore,
         });
         if (state !== "confirmed") {
@@ -671,7 +682,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to create event:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus, requestTransactionHistory]);
+  }, [address, executeTransaction, transactionStatus, requestTransactionHistory, allowTxHistory]);
 
   // ---- Buy Ticket ----
   const buyTicket = useCallback(async (event: Event, rail: PaymentRail = "credits"): Promise<string | null> => {
@@ -702,7 +713,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         const isFree =
           onChainEvent.price_credits === 0 && onChainEvent.price_usdcx === 0 && onChainEvent.price_usad === 0;
 
-        const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
+        const historyBefore = await snapshotTxHistory(
+          allowTxHistory ? requestTransactionHistory : undefined,
+          PASSMEET_V1_PROGRAM_ID
+        );
 
         let functionName: string;
         let inputs: string[];
@@ -815,7 +829,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           if (tempId) break;
 
           LOG("buyTicket: no transactionId from wallet (Shield/Leo edge case)", { walletAttempt: walletAttempt + 1 });
-          if (requestTransactionHistory) {
+          if (allowTxHistory && requestTransactionHistory) {
             try {
               const after = await requestTransactionHistory(PASSMEET_V1_PROGRAM_ID);
               if (historyBefore) {
@@ -848,7 +862,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         } else if (tempId) {
           const mintResult = await pollForTxHash(tempId, transactionStatus, {
             program: PASSMEET_V1_PROGRAM_ID,
-            requestTransactionHistory,
+            requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
             historyBefore,
           });
           if (mintResult.state !== "confirmed" || !mintResult.txHash) {
@@ -917,7 +931,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to buy ticket:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus, requestRecords, refreshTickets, refreshEvents, walletName, requestTransactionHistory]);
+  }, [address, executeTransaction, transactionStatus, requestRecords, refreshTickets, refreshEvents, walletName, requestTransactionHistory, allowTxHistory]);
 
   // ---- Verify Entry ----
   const verifyEntry = useCallback(async (ticket: Ticket): Promise<string | null> => {
@@ -1061,7 +1075,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
           recordInput = `{\nowner: ${fmt(owner)},\nevent_id: ${fmt(eventId)},\nticket_id: ${fmt(ticketId)},\n_nonce: ${fmt(nonce)}\n}`;
         }
       }
-      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
+      const historyBefore = await snapshotTxHistory(
+        allowTxHistory ? requestTransactionHistory : undefined,
+        PASSMEET_V1_PROGRAM_ID
+      );
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "verify_entry",
@@ -1074,7 +1091,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       if (tempId) {
         const verifyResult = await pollForTxHash(tempId, transactionStatus, {
           program: PASSMEET_V1_PROGRAM_ID,
-          requestTransactionHistory,
+          requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
           historyBefore,
         });
         if (verifyResult.state !== "confirmed") {
@@ -1101,7 +1118,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       console.error("Failed to verify entry:", error);
       throw new Error(mapWalletError(error));
     }
-  }, [address, executeTransaction, transactionStatus, requestRecords, requestTransactionHistory]);
+  }, [address, executeTransaction, transactionStatus, requestRecords, requestTransactionHistory, allowTxHistory]);
 
   // ---- Helpers ----
   async function pollForNewEventId(prevCount: number, maxAttempts = 15): Promise<number> {

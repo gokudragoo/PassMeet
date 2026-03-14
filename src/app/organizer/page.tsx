@@ -23,8 +23,15 @@ import { getConfiguredTokenId } from "@/lib/aleo-rpc";
 import { pollForTxHash, snapshotTxHistory } from "@/lib/walletTx";
 
 export default function OrganizerPage() {
-  const { address, executeTransaction, transactionStatus, requestTransactionHistory } = useWallet();
+  const { address, executeTransaction, transactionStatus, requestTransactionHistory, wallet } = useWallet();
   const { events, isLoading, createEvent, refreshEvents, isAuthenticated } = usePassMeet();
+  const walletName = String(
+    (wallet as { adapter?: { name?: unknown }; name?: unknown } | null)?.adapter?.name ??
+      (wallet as { name?: unknown } | null)?.name ??
+      ""
+  );
+  // Shield often requires an additional permission for on-chain history reads. Avoid requesting it.
+  const allowTxHistory = walletName.length > 0 && !/shield/i.test(walletName);
   const [loading, setLoading] = useState(false);
   const [eventName, setEventName] = useState("");
   const [capacity, setCapacity] = useState("");
@@ -84,7 +91,10 @@ export default function OrganizerPage() {
     setConfiguringTokens(true);
     try {
       toast.info("Configuring USDCx/USAD rails on-chain...");
-      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_V1_PROGRAM_ID);
+      const historyBefore = await snapshotTxHistory(
+        allowTxHistory ? requestTransactionHistory : undefined,
+        PASSMEET_V1_PROGRAM_ID
+      );
       const result = await executeTransaction({
         program: PASSMEET_V1_PROGRAM_ID,
         function: "configure_tokens",
@@ -95,7 +105,7 @@ export default function OrganizerPage() {
       if (!tempId) throw new Error("Transaction was not submitted.");
       const confirm = await pollForTxHash(tempId, transactionStatus, {
         program: PASSMEET_V1_PROGRAM_ID,
-        requestTransactionHistory,
+        requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
         historyBefore,
       });
       if (confirm.state !== "confirmed" || !confirm.txHash) {
@@ -183,7 +193,7 @@ export default function OrganizerPage() {
       // Leo Wallet: "Could not create authorization" usually means insufficient UTXOs
       if (errorMessage.toLowerCase().includes("authorization")) {
         errorMessage =
-          "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits—one for the transaction and one for the fee (~0.025 credits). Try splitting your balance or getting more testnet tokens from a faucet.";
+          "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits: one for the transaction and one for the fee (~0.025 credits). Try splitting your balance or getting more testnet tokens from a faucet.";
       }
       toast.error(errorMessage);
     } finally {

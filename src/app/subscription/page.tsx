@@ -46,8 +46,15 @@ const TIER_NAMES: Record<number, string> = {
 };
 
 export default function SubscriptionPage() {
-  const { address, executeTransaction, transactionStatus, requestTransactionHistory, requestRecords } = useWallet();
+  const { address, executeTransaction, transactionStatus, requestTransactionHistory, requestRecords, wallet } = useWallet();
   const { isAuthenticated } = usePassMeet();
+  const walletName = String(
+    (wallet as { adapter?: { name?: unknown }; name?: unknown } | null)?.adapter?.name ??
+      (wallet as { name?: unknown } | null)?.name ??
+      ""
+  );
+  // Shield often requires an additional permission for on-chain history reads. Avoid requesting it.
+  const allowTxHistory = walletName.length > 0 && !/shield/i.test(walletName);
   const [loading, setLoading] = useState<string | null>(null);
   const [currentTier, setCurrentTier] = useState("Free");
   const [tierLoading, setTierLoading] = useState(true);
@@ -136,7 +143,10 @@ export default function SubscriptionPage() {
     setConfiguring(true);
     try {
       toast.info("Configuring subscription payments on-chain...");
-      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_SUBS_PROGRAM_ID);
+      const historyBefore = await snapshotTxHistory(
+        allowTxHistory ? requestTransactionHistory : undefined,
+        PASSMEET_SUBS_PROGRAM_ID
+      );
       const result = await executeTransaction({
         program: PASSMEET_SUBS_PROGRAM_ID,
         function: "configure",
@@ -148,7 +158,7 @@ export default function SubscriptionPage() {
 
       const confirm = await pollForTxHash(tempId, transactionStatus, {
         program: PASSMEET_SUBS_PROGRAM_ID,
-        requestTransactionHistory,
+        requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
         historyBefore,
       });
       if (confirm.state !== "confirmed" || !confirm.txHash) {
@@ -300,7 +310,10 @@ export default function SubscriptionPage() {
       toast.info(`Subscribing to ${tier.name} with ${railLabel(rail)}...`);
 
       const FEE_TX = 100_000;
-      const historyBefore = await snapshotTxHistory(requestTransactionHistory, PASSMEET_SUBS_PROGRAM_ID);
+      const historyBefore = await snapshotTxHistory(
+        allowTxHistory ? requestTransactionHistory : undefined,
+        PASSMEET_SUBS_PROGRAM_ID
+      );
 
       let functionName: string;
       let inputs: string[];
@@ -354,7 +367,7 @@ export default function SubscriptionPage() {
 
       const confirm = await pollForTxHash(tempId, transactionStatus, {
         program: PASSMEET_SUBS_PROGRAM_ID,
-        requestTransactionHistory,
+        requestTransactionHistory: allowTxHistory ? requestTransactionHistory : undefined,
         historyBefore,
       });
       if (confirm.state !== "confirmed" || !confirm.txHash) {

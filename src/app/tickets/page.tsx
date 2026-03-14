@@ -28,7 +28,7 @@ import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID, USDCX_TOKEN_I
 function getWalletHint(walletName: string): string {
   const name = (walletName || "").toLowerCase();
   if (name.includes("shield")) return "Shield usually confirms in seconds.";
-  if (name.includes("leo")) return "Leo may take 1–2 minutes to confirm.";
+  if (name.includes("leo")) return "Leo may take 1-2 minutes to confirm.";
   return "Transaction submitted. Confirmation may take up to 2 minutes.";
 }
 
@@ -113,7 +113,7 @@ export default function TicketsPage() {
       let errorMessage = error instanceof Error ? error.message : "Transaction failed";
       if (errorMessage.toLowerCase().includes("authorization")) {
         errorMessage =
-          "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits—one for the transaction and one for the fee (~0.025 credits). Try splitting your balance or getting more testnet tokens from a faucet.";
+          "Could not create authorization. Your wallet needs at least 2 separate records (UTXOs) with Aleo credits: one for the transaction and one for the fee (~0.025 credits). Try splitting your balance or getting more testnet tokens from a faucet.";
       }
       toast.error(errorMessage);
     } finally {
