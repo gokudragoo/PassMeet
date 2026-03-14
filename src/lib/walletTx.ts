@@ -34,7 +34,20 @@ export async function pollForTxHash(
   for (let i = 0; i < maxAttempts; i++) {
     const delay = i < firstPhaseAttempts ? firstPhaseDelayMs : secondPhaseDelayMs;
     await new Promise((r) => setTimeout(r, delay));
-    const res = await transactionStatus(tempId);
+    let res: TransactionStatusResponse | null = null;
+    try {
+      res = await transactionStatus(tempId);
+    } catch (e) {
+      // Some wallets (notably Shield) can throw "Transaction not found" for a short window
+      // right after broadcasting, before the transaction is discoverable/indexed. Treat as
+      // still-submitted and keep polling.
+      const msg = (e as Error)?.message?.toLowerCase?.() ?? "";
+      if (msg.includes("transaction not found") || msg.includes("not found")) {
+        continue;
+      }
+      throw e;
+    }
+    if (!res) continue;
     if (res.transactionId && isOnChainTxHash(res.transactionId)) {
       return { state: "confirmed", txHash: res.transactionId };
     }
@@ -113,4 +126,3 @@ export async function executeAndConfirm(
   }
   return { txHash: result.txHash };
 }
-
