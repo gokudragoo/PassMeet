@@ -31,6 +31,22 @@ async function getSdk() {
   return import("@provablehq/sdk/testnet.js");
 }
 
+function normalizeBase64(input: string): string {
+  const s = (input ?? "").trim();
+  // Accept base64url inputs too.
+  const b64 = s.replace(/-/g, "+").replace(/_/g, "/");
+  const pad = b64.length % 4;
+  return pad === 0 ? b64 : b64 + "=".repeat(4 - pad);
+}
+
+function tryDecodeSignatureBytes(signatureBase64: string): Uint8Array | null {
+  try {
+    return Buffer.from(normalizeBase64(signatureBase64), "base64");
+  } catch {
+    return null;
+  }
+}
+
 export async function POST(request: Request) {
   const ip = getClientIp(request);
   const rl = rateLimit(`auth:verify:${ip}`, 20, 60_000);
@@ -71,18 +87,38 @@ export async function POST(request: Request) {
 
     const { Address, Signature } = await getSdk();
 
-    let signatureBytes: Uint8Array;
-    try {
-      signatureBytes = Buffer.from(signatureBase64, "base64");
-    } catch {
-      return NextResponse.json({ error: "Invalid signature encoding" }, { status: 400 });
+    // Wallets differ in signature encoding:
+    // - Some return raw signature bytes (Signature.toBytesLe()).
+    // - Some return bytes of the signature string (e.g. "sign1..."), which must be parsed with Signature.from_string.
+    // We accept both for interoperability.
+    let signature: ReturnType<typeof Signature.fromBytesLe> | null = null;
+    const sigBytes = tryDecodeSignatureBytes(signatureBase64);
+
+    if (sigBytes && sigBytes.length > 0) {
+      try {
+        signature = Signature.fromBytesLe(sigBytes);
+      } catch {
+        // try parse as string stored in bytes
+        try {
+          const sigText = new TextDecoder().decode(sigBytes).trim();
+          if (sigText.startsWith("sign")) {
+            signature = Signature.from_string(sigText);
+          }
+        } catch {
+          // ignore and fall through to error below
+        }
+      }
+    } else if (signatureBase64.trim().startsWith("sign")) {
+      // Some clients may send the signature string directly.
+      try {
+        signature = Signature.from_string(signatureBase64.trim());
+      } catch {
+        // fall through
+      }
     }
 
-    let signature: ReturnType<typeof Signature.fromBytesLe>;
-    try {
-      signature = Signature.fromBytesLe(signatureBytes);
-    } catch {
-      return NextResponse.json({ error: "Invalid signature bytes" }, { status: 400 });
+    if (!signature) {
+      return NextResponse.json({ error: "Invalid signature" }, { status: 400 });
     }
 
     let aleoAddress: ReturnType<typeof Address.from_string>;

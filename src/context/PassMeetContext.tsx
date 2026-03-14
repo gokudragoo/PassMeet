@@ -2,6 +2,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from "react";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
+import { toast } from "sonner";
 import {
   PASSMEET_V1_PROGRAM_ID,
   PASSMEET_SUBS_PROGRAM_ID,
@@ -112,6 +113,9 @@ function mapWalletError(error: unknown): string {
   if (msg.includes("not_granted") || msg.includes("not granted")) {
     return "Record access was denied. Disconnect your wallet and reconnect, then approve record access for this app.";
   }
+  if (msg.includes("program not allowed")) {
+    return `Wallet program access is missing. Disconnect and reconnect, then approve program access for: ${PASSMEET_V1_PROGRAM_ID}, ${PASSMEET_SUBS_PROGRAM_ID}, ${CREDITS_PROGRAM_ID}, ${TOKEN_REGISTRY_PROGRAM_ID}.`;
+  }
   return (error as Error)?.message ?? "Something went wrong. Please try again.";
 }
 
@@ -214,6 +218,8 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
   const pendingOptimisticTicketRef = useRef<{ address: string; ticket: Ticket } | null>(null);
   const refreshTicketsDebounceRef = useRef<{ lastCall: number; lastCount: number }>({ lastCall: 0, lastCount: 0 });
   const REFRESH_TICKETS_DEBOUNCE_MS = 500;
+  const recordAccessIssueRef = useRef<{ kind: "not_granted" | "program_not_allowed"; message: string } | null>(null);
+  const recordAccessToastShownRef = useRef(false);
 
   // ---- Authentication ----
   const authenticateWithSignature = useCallback(async (): Promise<boolean> => {
@@ -239,7 +245,10 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const message = typeof nonceData?.message === "string" ? nonceData.message : null;
       if (!message) throw new Error("Invalid nonce response.");
 
-      const signatureBytes = await signMessage(message);
+      // Some wallets return incompatible signature formats when given a string input.
+      // Always sign bytes to keep Shield/Leo/Puzzle/Fox behavior consistent.
+      const msgBytes = new TextEncoder().encode(message);
+      const signatureBytes = await signMessage(msgBytes);
       if (!signatureBytes) {
         LOG("authenticateWithSignature: rejected or failed");
         setIsAuthenticated(false);
@@ -367,6 +376,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
     LOG("refreshTickets: starting...", { address: address.slice(0, 12) + "...", silent });
     if (!silent) setIsDataLoading(true);
     try {
+      recordAccessIssueRef.current = null;
       let records: unknown[] | null = null;
       for (let attempt = 0; attempt < 3; attempt++) {
         try {
@@ -379,15 +389,30 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
         } catch (e) {
           const msg = (e as Error)?.message ?? "";
           LOG("refreshTickets: requestRecords failed", { attempt: attempt + 1, message: msg });
-          if (attempt === 2) {
-            const lower = msg.toLowerCase();
-            if (lower.includes("not_granted") || lower.includes("not granted")) {
-              throw new Error(
-                "Record access was denied. Please disconnect your wallet and reconnect - when reconnecting, approve the permission to access records for this app."
-              );
+          const lower = msg.toLowerCase();
+          if (lower.includes("program not allowed")) {
+            recordAccessIssueRef.current = { kind: "program_not_allowed", message: msg };
+            if (!recordAccessToastShownRef.current && !silent) {
+              recordAccessToastShownRef.current = true;
+              toast.error("Wallet program access needed", {
+                description: `Disconnect and reconnect, then approve access for ${PASSMEET_V1_PROGRAM_ID} (tickets) and ${CREDITS_PROGRAM_ID} (fees).`,
+              });
             }
-            throw e;
+            records = [];
+            break;
           }
+          if (lower.includes("not_granted") || lower.includes("not granted")) {
+            recordAccessIssueRef.current = { kind: "not_granted", message: msg };
+            if (!recordAccessToastShownRef.current && !silent) {
+              recordAccessToastShownRef.current = true;
+              toast.error("Record access denied", {
+                description: "Disconnect your wallet and reconnect, then approve record access for this app.",
+              });
+            }
+            records = [];
+            break;
+          }
+          if (attempt === 2) throw e;
         }
       }
       records = records ?? [];
@@ -1128,6 +1153,7 @@ export function PassMeetProvider({ children }: PassMeetProviderProps) {
       const doRefresh = async () => {
         await refreshEvents();
         let count = await refreshTickets();
+        if (recordAccessIssueRef.current) return;
         for (let retry = 0; retry < 2 && count === 0; retry++) {
           await new Promise((r) => setTimeout(r, 3000));
           count = await refreshTickets({ silent: true });
