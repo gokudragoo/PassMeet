@@ -331,6 +331,7 @@ bash scripts/check_tokens.sh
 - Expand automated tests (walletTx, record parsing, auth routes, contract integration).
 - Add an activity log (tickets, gate verifies, subscriptions).
 - Support user-uploaded event images stored on IPFS.
+- 
 
 ---
 
