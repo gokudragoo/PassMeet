@@ -4,6 +4,7 @@ import Link from "next/link";
 import { motion } from "framer-motion";
 import { Button } from "@/components/ui/button";
 import { EXPLORER_BASE } from "@/lib/aleo";
+import { WalletSupportPanel } from "@/components/WalletSupportPanel";
 import { 
   Ticket, 
   ShieldCheck, 
@@ -12,7 +13,9 @@ import {
   ScanLine, 
   ArrowRight,
   Globe,
-  Users
+  Users,
+  HandCoins,
+  Coins
 } from "lucide-react";
 
 export default function Home() {
@@ -164,7 +167,7 @@ export default function Home() {
             <p className="mt-4 text-muted-foreground">Why traditional tickets are broken, and how Aleo fixes them.</p>
           </div>
 
-          <div className="grid gap-6 md:grid-cols-3">
+          <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-4">
             {[
               {
                 title: "Zero-Knowledge Privacy",
@@ -173,16 +176,22 @@ export default function Home() {
                 color: "text-primary"
               },
               {
-                title: "Non-Transferable",
-                description: "Tickets are cryptographically bound to your identity on Aleo, preventing unauthorized resale and fraud.",
-                icon: Lock,
+                title: "QR Entry Scanning",
+                description: "Attendees can generate entry QR payloads and organizer devices can decode them before the private on-chain proof is submitted.",
+                icon: ScanLine,
                 color: "text-blue-500"
               },
               {
-                title: "Instant Verification",
-                description: "Optimized proof generation ensures gate scanning is as fast as traditional QR codes, but 100x more secure.",
-                icon: Zap,
+                title: "Multi-Currency Checkout",
+                description: "Credits, USDCx, and USAD are priced side-by-side so organizers can run privacy-preserving payments in the rail that fits the event.",
+                icon: Coins,
                 color: "text-yellow-500"
+              },
+              {
+                title: "Secondary Market Desk",
+                description: "A built-in resale desk lets attendees publish, browse, and reserve private ticket resale listings on testnet.",
+                icon: HandCoins,
+                color: "text-emerald-400"
               }
             ].map((feature, idx) => (
               <motion.div
@@ -215,25 +224,25 @@ export default function Home() {
             {[
               {
                 title: "Organizers Create",
-                description: "Deploy an event contract on Aleo with specific rules and capacity. Total privacy for both parties.",
+                description: "Deploy an event with credits, USDCx, and USAD rails while keeping event operations anchored on Aleo testnet.",
                 side: "left",
                 icon: LayoutDashboard
               },
               {
                 title: "Attendees Buy",
-                description: "Mint a private ticket record. Your ownership is hidden from everyone but yourself.",
+                description: "Mint a private ticket record or reserve a resale listing while the buyer and seller keep coordination off the public chain.",
                 side: "right",
                 icon: Ticket
               },
               {
-                title: "Generate Proof",
-                description: "When at the gate, generate a one-time ZK proof of entry. No wallet exposure.",
+                title: "Scan The Entry QR",
+                description: "At the venue, decode a PassMeet entry QR from an uploaded image, a second screen, or a direct gate link.",
                 side: "left",
                 icon: ScanLine
               },
               {
                 title: "Enter Seamlessly",
-                description: "Gate verifies the proof on-chain and grants access. Your presence remains anonymous.",
+                description: "Gate verifies the proof on-chain and grants access while the attendee keeps their wallet identity private.",
                 side: "right",
                 icon: Globe
               }
@@ -261,6 +270,8 @@ export default function Home() {
           </div>
         </div>
       </section>
+
+      <WalletSupportPanel />
 
       {/* CTA Section */}
       <section className="relative overflow-hidden py-24">

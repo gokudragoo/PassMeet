@@ -24,6 +24,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Badge } from "@/components/ui/badge";
 import { usePassMeet, Ticket, PaymentRail } from "@/context/PassMeetContext";
 import { getTransactionUrl, getProgramUrl, PASSMEET_V1_PROGRAM_ID, USDCX_TOKEN_ID, USAD_TOKEN_ID } from "@/lib/aleo";
+import { EntryQrDialog } from "@/components/EntryQrDialog";
+import { ResaleMarketPanel } from "@/components/ResaleMarketPanel";
 
 function getWalletHint(walletName: string): string {
   const name = (walletName || "").toLowerCase();
@@ -199,7 +201,7 @@ export default function TicketsPage() {
       </div>
 
       <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
-        <TabsList className="mb-8 grid w-full max-w-md grid-cols-2 bg-white/5 border border-white/10 p-1 rounded-full">
+        <TabsList className="mb-8 grid w-full max-w-2xl grid-cols-3 bg-white/5 border border-white/10 p-1 rounded-full">
           <TabsTrigger value="available" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-black font-bold">
             Available Events ({events.length})
           </TabsTrigger>
@@ -209,7 +211,10 @@ export default function TicketsPage() {
               <Badge className="ml-2 bg-black text-white border-none h-5 w-5 p-0 flex items-center justify-center text-[10px]">
                 {myTickets.length}
               </Badge>
-            )}
+              )}
+            </TabsTrigger>
+          <TabsTrigger value="resale" className="rounded-full data-[state=active]:bg-primary data-[state=active]:text-black font-bold">
+            Resale Desk
           </TabsTrigger>
         </TabsList>
 
@@ -449,6 +454,7 @@ export default function TicketsPage() {
                     </div>
 
                     <div className="mt-8 flex flex-col gap-4 sm:flex-row sm:justify-end">
+                      <EntryQrDialog ticket={ticket} />
                       <Button
                         variant="outline"
                         className="border-white/10 bg-white/5 font-bold hover:bg-white/10 text-white rounded-full"
@@ -493,6 +499,10 @@ export default function TicketsPage() {
               </div>
             )}
           </div>
+        </TabsContent>
+
+        <TabsContent value="resale">
+          <ResaleMarketPanel address={address} isAuthenticated={isAuthenticated} tickets={myTickets} />
         </TabsContent>
       </Tabs>
     </div>

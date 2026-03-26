@@ -4,7 +4,7 @@ PassMeet is a privacy-first event ticketing and gate verification app built on A
 
 ---
 
-## Update (March 2026)
+## Update (March 26, 2026)
 
 Summary of what was implemented in this repo to make the app reliable and "production-ready for testnet":
 
@@ -16,6 +16,18 @@ Summary of what was implemented in this repo to make the app reliable and "produ
 - RPC hardening: mapping reads prefer Provable `/v1` (even if `NEXT_PUBLIC_ALEO_RPC_URL` is `/v2`) and correctly handle "200 + null" responses.
 - Metadata durability: optional Pinata/IPFS with timeouts; fallback to on-chain discoverability if IPFS is missing.
 - DevOps scripts: WSL-friendly deploy, bump program IDs, token registration + minting, and auth-secret generation.
+- QR entry flow: attendees can generate a PassMeet entry QR, and the gate page can decode a QR payload from a pasted link or uploaded camera image.
+- Secondary market desk: added a private resale listing board with reserve flow and multi-rail price discovery. Current deployed testnet contracts still require a future transfer transition for full seller-to-buyer ticket settlement.
+- Multi-wallet readiness: added clearer support guidance for Shield, Leo, Puzzle, and Fox.
+- Runtime health visibility: added `GET /api/health` so deployments can be checked quickly with `curl`.
+
+WaveHack additions shipped in this pass:
+
+- `QR code entry scanning`
+- `Secondary market / private resale desk`
+- `Credits + USDCx + USAD pricing and checkout UX improvements`
+- `Operational health endpoint and local verification workflow`
+- `README refresh with test/build/runtime verification notes`
 
 ---
 
@@ -70,14 +82,16 @@ Nullifier design:
 
 ### Components
 
-| Component | Description |
-|-----------|-------------|
-| Next.js App Router | Organizer dashboard, tickets, gate, subscription pages |
-| API Routes | Auth (nonce, verify, session, logout), event metadata persistence (IPFS) |
-| Aleo Programs | Events/tickets and subscriptions programs (IDs are configurable via env) |
-| Payments | `credits.aleo` for credits; `token_registry.aleo` for USDCx/USAD |
-| RPC | Provable Explorer REST (`/v1` for mappings), optional JSON-RPC fallback |
-| Wallets | Shield, Leo, Puzzle, Fox |
+
+| Component          | Description                                                              |
+| ------------------ | ------------------------------------------------------------------------ |
+| Next.js App Router | Organizer dashboard, tickets, gate, subscription pages                   |
+| API Routes         | Auth (nonce, verify, session, logout), event metadata persistence (IPFS) |
+| Aleo Programs      | Events/tickets and subscriptions programs (IDs are configurable via env) |
+| Payments           | `credits.aleo` for credits; `token_registry.aleo` for USDCx/USAD         |
+| RPC                | Provable Explorer REST (`/v1` for mappings), optional JSON-RPC fallback  |
+| Wallets            | Shield, Leo, Puzzle, Fox                                                 |
+
 
 ### Programs (This Repo)
 
@@ -118,6 +132,8 @@ flowchart LR
   A2 --> TR
 ```
 
+
+
 ---
 
 ## Product Market Fit (PMF) and Go-To-Market (GTM)
@@ -153,19 +169,21 @@ GTM plan (testnet -> mainnet):
 
 Copy `.env.example` to `.env.local` and configure:
 
-| Variable | Required | Description |
-|----------|----------|-------------|
-| `PASSMEET_AUTH_SECRET` | Yes | 32+ char random string (used to sign the session cookie). Placeholder values are rejected. |
-| `NEXT_PUBLIC_ALEO_NETWORK` | No | `testnet` or `mainnet` (default: testnet) |
-| `NEXT_PUBLIC_ALEO_RPC_URL` | No | Default: `https://api.explorer.provable.com/v2` (mapping reads will still prefer `/v1`) |
-| `NEXT_PUBLIC_ALEO_JSON_RPC` | No | Optional JSON-RPC fallback for mapping reads |
-| `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID` | Yes | Deployed events program ID |
-| `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID` | Yes | Deployed subscriptions program ID |
-| `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID` | Yes (payments) | `token_registry.aleo` |
-| `NEXT_PUBLIC_USDCX_TOKEN_ID` | For USDCx | Field literal after token registration |
-| `NEXT_PUBLIC_USAD_TOKEN_ID` | For USAD | Field literal after token registration |
-| `PINATA_JWT` | No | Enables IPFS metadata persistence |
-| `NEXT_PUBLIC_GATEWAY_URL` | No | IPFS gateway for image/metadata reads |
+
+| Variable                                | Required       | Description                                                                                |
+| --------------------------------------- | -------------- | ------------------------------------------------------------------------------------------ |
+| `PASSMEET_AUTH_SECRET`                  | Yes            | 32+ char random string (used to sign the session cookie). Placeholder values are rejected. |
+| `NEXT_PUBLIC_ALEO_NETWORK`              | No             | `testnet` or `mainnet` (default: testnet)                                                  |
+| `NEXT_PUBLIC_ALEO_RPC_URL`              | No             | Default: `https://api.explorer.provable.com/v2` (mapping reads will still prefer `/v1`)    |
+| `NEXT_PUBLIC_ALEO_JSON_RPC`             | No             | Optional JSON-RPC fallback for mapping reads                                               |
+| `NEXT_PUBLIC_PASSMEET_V1_PROGRAM_ID`    | Yes            | Deployed events program ID                                                                 |
+| `NEXT_PUBLIC_PASSMEET_SUBS_PROGRAM_ID`  | Yes            | Deployed subscriptions program ID                                                          |
+| `NEXT_PUBLIC_TOKEN_REGISTRY_PROGRAM_ID` | Yes (payments) | `token_registry.aleo`                                                                      |
+| `NEXT_PUBLIC_USDCX_TOKEN_ID`            | For USDCx      | Field literal after token registration                                                     |
+| `NEXT_PUBLIC_USAD_TOKEN_ID`             | For USAD       | Field literal after token registration                                                     |
+| `PINATA_JWT`                            | No             | Enables IPFS metadata persistence                                                          |
+| `NEXT_PUBLIC_GATEWAY_URL`               | No             | IPFS gateway for image/metadata reads                                                      |
+
 
 Generate a real auth secret (writes to `.env.local` if missing):
 
@@ -188,7 +206,38 @@ npm run test:run
 npm run build
 ```
 
+Runtime probes after build:
+
+```bash
+curl http://localhost:3000/api/health
+curl http://localhost:3000/api/resale
+curl -I http://localhost:3000/
+curl -I http://localhost:3000/gate
+```
+
 Note: In some restricted Windows environments, `next build` and test runners can fail due to process spawn restrictions. Use WSL or CI (Linux) as the authoritative build/test pass.
+
+### Verified In This Repo Update
+
+The following checks were run successfully on March 26, 2026:
+
+- `npm install`
+- `npm run lint`
+- `npx tsc --noEmit`
+- `npm run test:run`
+- `npm run build`
+- `curl http://localhost:3000/api/health`
+- `curl http://localhost:3000/api/resale`
+- `curl -I http://localhost:3000/`
+- `curl -I http://localhost:3000/gate`
+
+Observed runtime status from `/api/health` during verification:
+
+- app status: `ok`
+- network: `testnet`
+- RPC reachable: `true`
+- latest block height was returned successfully
+- QR entry, resale desk, and multi-currency feature flags were exposed
 
 ---
 
@@ -243,15 +292,22 @@ bash scripts/check_tokens.sh
 
 ## Repo Map
 
-| Path | Description |
-|------|-------------|
-| `src/app/` | Pages (organizer, tickets, gate, subscription) |
-| `src/app/api/` | Auth and event metadata routes |
-| `src/context/` | PassMeetContext (events, tickets, auth, buyTicket, verifyEntry) |
-| `src/lib/` | Aleo config + RPC helpers, auth helpers, Pinata, walletTx, record parsing |
-| `contracts/passmeet_events_7788/` | Events + tickets Leo program |
-| `contracts/passmeet_subs_7788/` | Subscriptions Leo program |
-| `scripts/` | build/deploy, bump IDs, token registration, auth secret |
+
+| Path                                    | Description                                                               |
+| --------------------------------------- | ------------------------------------------------------------------------- |
+| `src/app/`                              | Pages (organizer, tickets, gate, subscription)                            |
+| `src/app/api/`                          | Auth and event metadata routes                                            |
+| `src/app/api/health/route.ts`           | Deployment/testnet readiness endpoint                                     |
+| `src/app/api/resale/route.ts`           | Resale listing read/write API                                             |
+| `src/context/`                          | PassMeetContext (events, tickets, auth, buyTicket, verifyEntry)           |
+| `src/lib/`                              | Aleo config + RPC helpers, auth helpers, Pinata, walletTx, record parsing |
+| `src/components/EntryQrDialog.tsx`      | Ticket QR generation dialog                                               |
+| `src/components/ResaleMarketPanel.tsx`  | Secondary market listing UI                                               |
+| `src/components/WalletSupportPanel.tsx` | Wallet compatibility UX copy                                              |
+| `contracts/passmeet_events_7788/`       | Events + tickets Leo program                                              |
+| `contracts/passmeet_subs_7788/`         | Subscriptions Leo program                                                 |
+| `scripts/`                              | build/deploy, bump IDs, token registration, auth secret                   |
+
 
 ---
 
@@ -271,13 +327,12 @@ bash scripts/check_tokens.sh
 - Enforce subscription-tier limits (or align tier copy with what is actually enforced).
 - Add `update_event` / `cancel_event` transitions.
 - Add a durable metadata index (database) for production deployments.
+- Add a deployed ticket-transfer transition so resale can settle fully on-chain without organizer-assisted handoff.
 - Expand automated tests (walletTx, record parsing, auth routes, contract integration).
 - Add an activity log (tickets, gate verifies, subscriptions).
 - Support user-uploaded event images stored on IPFS.
 
 ---
 
-## License
 
-MIT
 

@@ -30,6 +30,32 @@ export interface EventsIndex {
 }
 
 const EVENTS_INDEX_NAME = "passmeet_events_index";
+const RESALE_INDEX_NAME = "passmeet_resale_index";
+
+export interface ResaleListingMetadata {
+  id: string;
+  eventId: string;
+  ticketId: string;
+  eventName: string;
+  date: string;
+  location: string;
+  sellerAddress: string;
+  sellerNote?: string;
+  reservedFor?: string;
+  status: "open" | "reserved" | "cancelled";
+  prices: {
+    credits: number;
+    usdcx: number;
+    usad: number;
+  };
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface ResaleIndex {
+  listings: string[];
+  lastUpdated: string;
+}
 
 async function fetchPinata(url: string, init: RequestInit, timeoutMs = PINATA_TIMEOUT_MS): Promise<Response> {
   const controller = new AbortController();
@@ -103,13 +129,17 @@ export async function fetchFromIPFS<T>(cid: string): Promise<T | null> {
 }
 
 export async function getEventsCID(): Promise<string | null> {
+  return getIndexCid(EVENTS_INDEX_NAME);
+}
+
+async function getIndexCid(indexName: string): Promise<string | null> {
   if (!PINATA_JWT) {
     return null;
   }
 
   try {
     const response = await fetchPinata(
-      `https://api.pinata.cloud/data/pinList?metadata[name]=${EVENTS_INDEX_NAME}&status=pinned&pageLimit=1`,
+      `https://api.pinata.cloud/data/pinList?metadata[name]=${indexName}&status=pinned&pageLimit=1`,
       {
         headers: {
           Authorization: `Bearer ${PINATA_JWT}`,
@@ -196,4 +226,54 @@ export async function getAllEvents(): Promise<EventMetadata[]> {
     index.events.map((cid) => fetchFromIPFS<EventMetadata>(cid))
   );
   return results.filter((e): e is EventMetadata => e != null);
+}
+
+export async function saveResaleListing(listing: ResaleListingMetadata): Promise<string | null> {
+  if (!PINATA_JWT) {
+    return null;
+  }
+
+  const listingCID = await uploadToIPFS(listing, `passmeet_resale_${listing.id}`);
+
+  const existingIndexCID = await getIndexCid(RESALE_INDEX_NAME);
+  let resaleIndex: ResaleIndex = {
+    listings: [],
+    lastUpdated: new Date().toISOString(),
+  };
+
+  if (existingIndexCID) {
+    const existingIndex = await fetchFromIPFS<ResaleIndex>(existingIndexCID);
+    if (existingIndex) {
+      resaleIndex = existingIndex;
+    }
+  }
+
+  if (!resaleIndex.listings.includes(listingCID)) {
+    resaleIndex.listings.push(listingCID);
+  }
+  resaleIndex.lastUpdated = new Date().toISOString();
+
+  const newIndexCID = await uploadToIPFS(resaleIndex, RESALE_INDEX_NAME);
+  if (existingIndexCID && newIndexCID && existingIndexCID !== newIndexCID) {
+    await unpinFromIPFS(existingIndexCID);
+  }
+
+  return listingCID;
+}
+
+export async function getAllResaleListings(): Promise<ResaleListingMetadata[]> {
+  const indexCID = await getIndexCid(RESALE_INDEX_NAME);
+  if (!indexCID) {
+    return [];
+  }
+
+  const index = await fetchFromIPFS<ResaleIndex>(indexCID);
+  if (!index || !index.listings?.length) {
+    return [];
+  }
+
+  const results = await Promise.all(
+    index.listings.map((cid) => fetchFromIPFS<ResaleListingMetadata>(cid))
+  );
+  return results.filter((listing): listing is ResaleListingMetadata => listing != null);
 }

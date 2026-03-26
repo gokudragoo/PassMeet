@@ -1,8 +1,9 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { motion, AnimatePresence } from "framer-motion";
 import { useWallet } from "@provablehq/aleo-wallet-adaptor-react";
+import { useSearchParams } from "next/navigation";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { 
@@ -15,12 +16,17 @@ import {
   Camera,
   ChevronRight,
   Wallet,
-  ExternalLink
+  ExternalLink,
+  ImageUp,
+  QrCode,
+  ClipboardCheck
 } from "lucide-react";
 import { toast } from "sonner";
 import { Badge } from "@/components/ui/badge";
 import { usePassMeet, Ticket } from "@/context/PassMeetContext";
 import { ALEO_NETWORK, getTransactionUrl } from "@/lib/aleo";
+import { decodeEntryQrPayload, type EntryQrPayload } from "@/lib/entryQr";
+import { Textarea } from "@/components/ui/textarea";
 
 interface VerificationData {
   eventId: string;
@@ -32,12 +38,23 @@ interface VerificationData {
 
 export default function GatePage() {
   const { address } = useWallet();
+  const searchParams = useSearchParams();
   const { myTickets, verifyEntry, refreshTickets, isAuthenticated } = usePassMeet();
   const [status, setStatus] = useState<"idle" | "selecting" | "verifying" | "success" | "error">("idle");
   const [verificationData, setVerificationData] = useState<VerificationData | null>(null);
   const [lastError, setLastError] = useState<string | null>(null);
+  const [manualEntry, setManualEntry] = useState("");
+  const [decodedEntry, setDecodedEntry] = useState<EntryQrPayload | null>(null);
+  const [scanError, setScanError] = useState<string | null>(null);
+  const [scanLoading, setScanLoading] = useState(false);
 
   const NETWORK_LABEL = ALEO_NETWORK === "mainnet" ? "Aleo Mainnet" : "Aleo Testnet";
+  const matchedTicket = useMemo(
+    () => decodedEntry
+      ? myTickets.find((ticket) => ticket.eventId === decodedEntry.eventId && ticket.ticketId === decodedEntry.ticketId) ?? null
+      : null,
+    [decodedEntry, myTickets]
+  );
 
   // Refresh tickets when entering gate with wallet connected - ensures recordString is populated from wallet
   useEffect(() => {
@@ -45,6 +62,29 @@ export default function GatePage() {
       refreshTickets({ silent: true }).catch(() => {});
     }
   }, [address, refreshTickets]);
+
+  useEffect(() => {
+    const raw = searchParams.get("entry");
+    if (!raw) return;
+    const parsed = decodeEntryQrPayload(raw);
+    if (parsed) {
+      setDecodedEntry(parsed);
+      setManualEntry(raw);
+      setScanError(null);
+    }
+  }, [searchParams]);
+
+  const applyDecodedEntry = (raw: string) => {
+    const parsed = decodeEntryQrPayload(raw);
+    if (!parsed) {
+      setDecodedEntry(null);
+      setScanError("PassMeet QR not recognized. Use a PassMeet entry QR or gate link.");
+      return;
+    }
+    setDecodedEntry(parsed);
+    setScanError(null);
+    toast.success("Entry QR scanned");
+  };
 
   const handleStartScan = () => {
     if (!address) {
@@ -60,6 +100,43 @@ export default function GatePage() {
       return;
     }
     setStatus("selecting");
+  };
+
+  const handleDecodeManualEntry = () => {
+    applyDecodedEntry(manualEntry);
+  };
+
+  const handleScanImage = async (file: File | null) => {
+    if (!file) return;
+    setScanLoading(true);
+    setScanError(null);
+    try {
+      const detectorCtor = (window as Window & {
+        BarcodeDetector?: new (options?: { formats?: string[] }) => {
+          detect: (source: ImageBitmap) => Promise<Array<{ rawValue?: string }>>;
+        };
+      }).BarcodeDetector;
+
+      if (!detectorCtor) {
+        throw new Error("This browser does not support QR image detection. Paste the payload or gate link instead.");
+      }
+
+      const detector = new detectorCtor({ formats: ["qr_code"] });
+      const bitmap = await createImageBitmap(file);
+      const codes = await detector.detect(bitmap);
+      const rawValue = codes.find((code) => typeof code.rawValue === "string")?.rawValue ?? "";
+      if (!rawValue) {
+        throw new Error("No QR code was detected in that image.");
+      }
+      setManualEntry(rawValue);
+      applyDecodedEntry(rawValue);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : "Failed to scan QR image.";
+      setScanError(msg);
+      toast.error(msg);
+    } finally {
+      setScanLoading(false);
+    }
   };
 
   const handleSelectTicket = async (ticket: Ticket) => {
@@ -121,6 +198,84 @@ export default function GatePage() {
           Verify attendee ZK-proofs on-chain. No identity revealed, only validity confirmed.
         </p>
 
+        <div className="mb-10 rounded-3xl border border-white/10 bg-white/5 p-6 text-left">
+          <div className="grid gap-6 lg:grid-cols-[1.15fr,0.85fr]">
+            <div className="space-y-4">
+              <div className="flex items-center gap-2 text-primary">
+                <QrCode className="h-5 w-5" />
+                <p className="text-sm font-bold uppercase tracking-[0.25em]">QR Intake</p>
+              </div>
+              <p className="text-sm text-zinc-400">
+                Scan a PassMeet entry QR from an uploaded image, phone camera capture, or pasted gate link. If this browser also holds the matching ticket record, you can verify on-chain immediately.
+              </p>
+              <Textarea
+                value={manualEntry}
+                onChange={(e) => setManualEntry(e.target.value)}
+                placeholder="Paste a passmeet://entry payload or /gate?entry=... link"
+                className="min-h-28 border-white/10 bg-black/40 text-white"
+              />
+              <div className="flex flex-col gap-3 sm:flex-row">
+                <Button className="bg-primary text-black hover:bg-primary/90" onClick={handleDecodeManualEntry}>
+                  <ClipboardCheck className="mr-2 h-4 w-4" />
+                  Decode Payload
+                </Button>
+                <label className="inline-flex cursor-pointer items-center justify-center rounded-full border border-white/10 bg-white/5 px-5 py-2 text-sm font-bold text-white hover:bg-white/10">
+                  {scanLoading ? <Loader2 className="mr-2 h-4 w-4 animate-spin" /> : <ImageUp className="mr-2 h-4 w-4" />}
+                  Scan QR Image
+                  <input
+                    type="file"
+                    accept="image/*"
+                    capture="environment"
+                    className="hidden"
+                    onChange={(e) => handleScanImage(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+              </div>
+              {scanError && <p className="text-sm text-red-400">{scanError}</p>}
+            </div>
+
+            <div className="rounded-3xl border border-primary/20 bg-black/30 p-5">
+              <p className="text-xs uppercase tracking-[0.25em] text-zinc-500">Scan Result</p>
+              {decodedEntry ? (
+                <div className="mt-4 space-y-3">
+                  <div>
+                    <p className="text-lg font-bold text-white">{decodedEntry.eventName}</p>
+                    <p className="text-sm text-zinc-400">{decodedEntry.date || "Date pending"} - {decodedEntry.location || "Location pending"}</p>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3 text-sm">
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <p className="text-zinc-500">Event ID</p>
+                      <p className="mt-1 font-mono text-white">{decodedEntry.eventId}</p>
+                    </div>
+                    <div className="rounded-2xl border border-white/10 bg-white/5 p-3">
+                      <p className="text-zinc-500">Ticket ID</p>
+                      <p className="mt-1 font-mono text-white">{decodedEntry.ticketId}</p>
+                    </div>
+                  </div>
+                  {matchedTicket ? (
+                    <div className="rounded-2xl border border-primary/30 bg-primary/10 p-4">
+                      <p className="text-sm font-bold text-primary">Matching wallet ticket found</p>
+                      <p className="mt-1 text-sm text-zinc-300">This device can verify the scanned QR on-chain right now.</p>
+                      <Button className="mt-4 w-full bg-primary text-black hover:bg-primary/90" onClick={() => handleSelectTicket(matchedTicket)}>
+                        Verify Scanned Ticket
+                      </Button>
+                    </div>
+                  ) : (
+                    <div className="rounded-2xl border border-yellow-500/20 bg-yellow-500/10 p-4">
+                      <p className="text-sm font-bold text-yellow-300">QR recognized, ticket record not found locally</p>
+                      <p className="mt-1 text-sm text-zinc-300">Open this QR on the attendee&apos;s wallet-connected device or connect the wallet that actually holds the private ticket record.</p>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                <div className="mt-4 rounded-2xl border border-dashed border-white/10 p-6 text-sm text-zinc-500">
+                  No QR decoded yet.
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+
         <AnimatePresence mode="wait">
           {status === "idle" && (
             <motion.div
@@ -154,7 +309,7 @@ export default function GatePage() {
                     Connect Wallet First
                   </>
                 ) : (
-                  "Select Ticket to Verify"
+                  "Select Ticket To Verify"
                 )}
               </Button>
             </motion.div>
